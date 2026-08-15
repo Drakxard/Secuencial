@@ -57,12 +57,21 @@ function arrowEndpoint(arrow,end){
   const target=other?{x:other.x+sphereWidth(other)/2,y:other.y+sphereHeight(other)/2}:{x:arrow[end==='from'?'toX':'fromX'],y:arrow[end==='from'?'toY':'fromY']};
   return borderPoint(sphere,target.x,target.y);
 }
+function shortenArrowEnd(from,to,distance=7){
+  const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;
+  return{x:to.x-dx/length*distance,y:to.y-dy/length*distance};
+}
+function curvedArrowPath(from,to){
+  const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1,nx=-dy/length,ny=dx/length;
+  const curve=Math.min(105,length*.24),c1={x:from.x+dx*.34+nx*curve,y:from.y+dy*.34+ny*curve},c2={x:from.x+dx*.7+nx*curve,y:from.y+dy*.7+ny*curve};
+  return`M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}`;
+}
 function renderArrows(){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('arrows-layer');
   const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),tip=document.createElementNS(ns,'path');
-  marker.setAttribute('id','arrow-tip');marker.setAttribute('viewBox','0 0 12 12');marker.setAttribute('refX','10');marker.setAttribute('refY','6');marker.setAttribute('markerWidth','9');marker.setAttribute('markerHeight','9');marker.setAttribute('orient','auto-start-reverse');tip.setAttribute('d','M 1 1 L 11 6 L 1 11 z');marker.append(tip);defs.append(marker);svg.append(defs);
-  arrows().forEach(arrow=>{const from=arrowEndpoint(arrow,'from'),to=arrowEndpoint(arrow,'to'),group=document.createElementNS(ns,'g'),hit=document.createElementNS(ns,'path'),line=document.createElementNS(ns,'path'),bend=Math.min(80,Math.hypot(to.x-from.x,to.y-from.y)*.18),d=`M ${from.x} ${from.y} Q ${(from.x+to.x)/2-bend*.25} ${(from.y+to.y)/2-bend} ${to.x} ${to.y}`;group.classList.add('arrow-item');if(arrow.id===selectedArrowId)group.classList.add('selected');group.dataset.arrowId=arrow.id;hit.classList.add('arrow-hit');line.classList.add('arrow-line');hit.setAttribute('d',d);line.setAttribute('d',d);line.setAttribute('marker-end','url(#arrow-tip)');group.append(hit,line);svg.append(group)});
-  if(connectorDrag){const preview=document.createElementNS(ns,'path'),from=connectorDrag.from,to=connectorDrag.to;preview.classList.add('arrow-line','preview');preview.setAttribute('d',`M ${from.x} ${from.y} Q ${(from.x+to.x)/2} ${(from.y+to.y)/2-35} ${to.x} ${to.y}`);preview.setAttribute('marker-end','url(#arrow-tip)');svg.append(preview)}
+  marker.setAttribute('id','arrow-tip');marker.setAttribute('viewBox','0 0 14 14');marker.setAttribute('refX','11.5');marker.setAttribute('refY','7');marker.setAttribute('markerWidth','2.7');marker.setAttribute('markerHeight','2.7');marker.setAttribute('orient','auto');tip.setAttribute('d','M 2 2 L 12 7 L 2 12');tip.setAttribute('fill','none');tip.setAttribute('stroke','context-stroke');tip.setAttribute('stroke-width','3.4');tip.setAttribute('stroke-linecap','round');tip.setAttribute('stroke-linejoin','round');marker.append(tip);defs.append(marker);svg.append(defs);
+  arrows().forEach(arrow=>{const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),group=document.createElementNS(ns,'g'),hit=document.createElementNS(ns,'path'),line=document.createElementNS(ns,'path'),d=curvedArrowPath(from,to);group.classList.add('arrow-item');if(arrow.id===selectedArrowId)group.classList.add('selected');group.dataset.arrowId=arrow.id;hit.classList.add('arrow-hit');line.classList.add('arrow-line');hit.setAttribute('d',d);line.setAttribute('d',d);line.setAttribute('marker-end','url(#arrow-tip)');group.append(hit,line);svg.append(group)});
+  if(connectorDrag){const borderFrom=connectorDrag.from,rawTo=connectorDrag.to,from=shortenArrowEnd(rawTo,borderFrom,6),to=shortenArrowEnd(borderFrom,rawTo,7),preview=document.createElementNS(ns,'path');preview.classList.add('arrow-line','preview');preview.setAttribute('d',curvedArrowPath(from,to));preview.setAttribute('marker-end','url(#arrow-tip)');svg.append(preview)}
   board.append(svg);
 }
 
