@@ -1,6 +1,6 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError');
-let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, backgroundHold=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 const caretPositions=new Map();
 const selectionRanges=new Map();
@@ -9,13 +9,15 @@ let state={color:randomColor(),spheres:[]}, pages=[state], currentPage=0, restor
 function normalizeDocument(value){
   const rawPages=Array.isArray(value?.pages)?value.pages:Array.isArray(value?.spheres)?[value]:[];
   const validPages=rawPages.filter(page=>Array.isArray(page?.spheres)&&typeof page?.color==='string');
-  return{pages:validPages.length?validPages:[{color:randomColor(),spheres:[]}],updatedAt:value?.updatedAt??0};
+  const normalizedPages=validPages.length?validPages:[{color:randomColor(),spheres:[]}];
+  return{pages:normalizedPages,updatedAt:value?.updatedAt??0};
 }
 function documentState(){return{pages,updatedAt:Math.max(0,...pages.map(page=>page.updatedAt??0))}}
 function savedPageIndex(){const value=Number(localStorage.getItem(PAGE_KEY));return Number.isInteger(value)&&value>=0?value:0}
 function setDocument(value){
   const normalized=normalizeDocument(value);pages=normalized.pages;
   currentPage=Math.min(savedPageIndex(),pages.length-1);state=pages[currentPage];
+  removeEmptyHiddenPages();
 }
 
 function randomColor(){const row=Math.floor(Math.random()*8),col=Math.floor(Math.random()*16);return `hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`}
@@ -312,6 +314,10 @@ board.addEventListener('pointerdown',event=>{
     lastSphereClick=null;
     marquee={id:event.pointerId,startX:event.clientX,startY:event.clientY+scrollY,element:document.createElement('div')};
     marquee.element.className='selection-box'; board.append(marquee.element); board.setPointerCapture(event.pointerId);
+    backgroundHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{
+      if(!backgroundHold||backgroundHold.id!==event.pointerId)return;
+      marquee?.element.remove();marquee=null;backgroundHold=null;deleteCurrentPage();
+    },700)};
     updateMarquee(event.clientX,event.clientY+scrollY); return;
   }
   const handle=event.target.closest('.resize-handle');
@@ -344,6 +350,7 @@ board.addEventListener('dblclick',event=>{
 });
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
+  if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){
     const item=resizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,min=90;
@@ -379,6 +386,7 @@ function updateMarquee(x,y){
   board.querySelectorAll('.sphere').forEach(el=>el.classList.toggle('focused',el.dataset.id===selectedId));
 }
 function endDrag(event){
+  if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(marquee&&event.pointerId===marquee.id){marquee.element.remove();marquee=null;render();return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){resizeDrag=null;scheduleSave();render();return}
   if(!drag||event.pointerId!==drag.id)return;drag=null;scheduleSave();render()
@@ -403,11 +411,29 @@ function restoreScroll(){
     document.documentElement.classList.remove('restoring-view');
   }));
 }
+function replacePages(nextPages,activeState){
+  const oldPages=pages,oldScrolls=scrollPositions(),nextScrolls={};
+  nextPages.forEach((page,index)=>{const previousIndex=oldPages.indexOf(page);if(previousIndex>=0&&oldScrolls[previousIndex]!==undefined)nextScrolls[index]=oldScrolls[previousIndex]});
+  pages=nextPages.length?nextPages:[{color:randomColor(),spheres:[],updatedAt:Date.now()}];
+  currentPage=Math.max(0,pages.indexOf(activeState));if(currentPage<0)currentPage=0;
+  state=pages[currentPage];localStorage.setItem(SCROLL_KEY,JSON.stringify(nextScrolls));localStorage.setItem(PAGE_KEY,String(currentPage));
+}
+function removeEmptyHiddenPages(){
+  const remaining=pages.filter(page=>page===state||page.spheres.length);
+  if(remaining.length!==pages.length)replacePages(remaining,state);
+}
+function deleteCurrentPage(){
+  if(!confirm(`¿Eliminar esta página y sus ${state.spheres.length} elemento${state.spheres.length===1?'':'s'}?`))return;
+  const removedIndex=currentPage,nextPages=pages.filter(page=>page!==state),nextState=nextPages[Math.min(removedIndex,nextPages.length-1)];
+  replacePages(nextPages,nextState);focusSphere(null);contracted=false;render();restoreScroll();scheduleSave();
+}
 function switchPage(direction){
   const next=currentPage+direction;if(next<0)return;
+  if(next>=pages.length&&!state.spheres.length)return;
   saveScroll();
   if(next>=pages.length)pages.push({color:randomColor(),spheres:[],updatedAt:Date.now()});
   currentPage=next;state=pages[currentPage];localStorage.setItem(PAGE_KEY,String(currentPage));
+  removeEmptyHiddenPages();
   focusSphere(null);contracted=false;render();restoreScroll();scheduleSave();
 }
 
