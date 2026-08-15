@@ -48,7 +48,8 @@ function setDocument(value){
 }
 
 function randomColor(){const row=Math.floor(Math.random()*8),col=Math.floor(Math.random()*16);return `hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`}
-function textColor(){return Number(state.color.match(/(\d+)%\)$/)?.[1]??60)<48?'#f8fafc':'#172033'}
+function textColorFor(color){return Number(color.match(/(\d+)%\)$/)?.[1]??60)<48?'#f8fafc':'#172033'}
+function textColor(){return textColorFor(state.color)}
 function selected(){return state.spheres.find(s=>s.id===selectedId)}
 function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,caretPositions.get(sphere.id)??sphere.text.length));return selectionRanges.get(sphere.id)??{anchor:caret,focus:caret}}
 function caretFor(sphere){return rangeFor(sphere).focus}
@@ -71,10 +72,12 @@ function borderPoint(sphere,x,y){
 function arrowEndpoint(arrow,end){
   const sphere=state.spheres.find(item=>item.id===arrow[`${end}Id`]);
   if(!sphere)return{x:arrow[`${end}X`],y:arrow[`${end}Y`]};
+  const anchor=arrow[`${end}Anchor`];if(anchor)return{x:sphere.x+anchor.x*sphereWidth(sphere),y:sphere.y+anchor.y*sphereHeight(sphere)};
   const otherId=arrow[end==='from'?'toId':'fromId'],other=state.spheres.find(item=>item.id===otherId);
   const target=other?{x:other.x+sphereWidth(other)/2,y:other.y+sphereHeight(other)/2}:{x:arrow[end==='from'?'toX':'fromX'],y:arrow[end==='from'?'toY':'fromY']};
   return borderPoint(sphere,target.x,target.y);
 }
+function localAnchor(sphere,point){return{x:(point.x-sphere.x)/sphereWidth(sphere),y:(point.y-sphere.y)/sphereHeight(sphere)}}
 function shortenArrowEnd(from,to,distance=7){
   const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;
   return{x:to.x-dx/length*distance,y:to.y-dy/length*distance};
@@ -206,21 +209,29 @@ function addSphere(selectSphere=true){
 
 function isConnectorBorder(sphere,event,el){
   const rect=el.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,w=rect.width,h=rect.height;
-  if(sphere.shape!=='square')return Math.abs(Math.hypot((x-w/2)/(w/2),(y-h/2)/(h/2))-1)<.13;
-  const near=Math.min(x,y,w-x,h-y)<12,corner=(x<24||x>w-24)&&(y<24||y>h-24);return near&&!corner;
+  if(sphere.shape!=='square'){const radius=Math.hypot((x-w/2)/(w/2),(y-h/2)/(h/2));return radius>=.8&&radius<=1.08}
+  const near=x<w*.1||x>w*.9||y<h*.1||y>h*.9,corner=(x<w*.14||x>w*.86)&&(y<h*.14||y>h*.86);return near&&!corner;
 }
 
-function closeColorPalette(){colorPalette?.remove();colorPalette=null}
+function closeColorPalette(){colorPalette?.restorePreview?.();colorPalette?.remove();colorPalette=null}
 function openColorPalette(sphere,forArrows=false){
   closeColorPalette();
   const palette=document.createElement('div');palette.className='color-palette';palette.setAttribute('aria-label','Color de los elementos');
+  const originalColor=forArrows?(state.arrowColor??'#202020'):state.color;
+  const previewColor=color=>{
+    if(forArrows)board.querySelector('.arrows-layer')?.style.setProperty('--arrow-color',color);
+    else board.querySelectorAll('.sphere').forEach(item=>{item.style.setProperty('--sphere-color',color);item.style.setProperty('--sphere-text',textColorFor(color))});
+  };
+  palette.restorePreview=()=>previewColor(originalColor);
   for(let row=0;row<8;row++)for(let col=0;col<16;col++){
     const color=`hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`,swatch=document.createElement('button');
     swatch.type='button';swatch.className='color-swatch';swatch.style.background=color;swatch.title=color;
     swatch.addEventListener('pointerdown',event=>event.stopPropagation());
-    swatch.addEventListener('click',event=>{event.stopPropagation();if(forArrows)state.arrowColor=color;else state.color=color;closeColorPalette();render();scheduleSave()});
+    swatch.addEventListener('pointerenter',()=>previewColor(color));
+    swatch.addEventListener('click',event=>{event.stopPropagation();if(forArrows)state.arrowColor=color;else state.color=color;palette.restorePreview=null;closeColorPalette();render();scheduleSave()});
     palette.append(swatch);
   }
+  palette.addEventListener('pointerleave',()=>previewColor(originalColor));
   board.append(palette);colorPalette=palette;
   const width=palette.offsetWidth,height=palette.offsetHeight,gap=12,itemWidth=sphere?sphereWidth(sphere):0;
   let left=sphere?sphere.x+itemWidth+gap:mouse.x+gap;if(left+width>innerWidth-8)left=Math.max(8,(sphere?sphere.x:mouse.x)-width-gap);
@@ -482,7 +493,17 @@ board.addEventListener('dblclick',event=>{
 });
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
-  if(connectorDrag&&event.pointerId===connectorDrag.id){connectorDrag.to={x:event.clientX,y:event.clientY+scrollY};render();return}
+  if(!drag&&!resizeDrag&&!arrowDrag&&!connectorDrag){
+    const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
+    board.querySelectorAll('.sphere.connector-ready').forEach(item=>item.classList.remove('connector-ready'));
+    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
+  }
+  if(connectorDrag&&event.pointerId===connectorDrag.id){
+    const targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(item=>item.id===targetEl.dataset.id);
+    if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.to=borderPoint(target,connectorDrag.from.x,connectorDrag.from.y)}
+    else{connectorDrag.toId=null;connectorDrag.to={x:event.clientX,y:event.clientY+scrollY}}
+    render();return;
+  }
   if(arrowDrag&&event.pointerId===arrowDrag.id){const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}const arrow=arrowDrag.arrow;arrowDrag.moved=true;Object.assign(arrow,{fromId:null,toId:null,fromX:arrowDrag.from.x+dx,fromY:arrowDrag.from.y+dy,toX:arrowDrag.to.x+dx,toY:arrowDrag.to.y+dy});render();return}
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
@@ -525,8 +546,8 @@ function endDrag(event){
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
   if(arrowHold&&event.pointerId===arrowHold.id){clearTimeout(arrowHold.timer);arrowHold=null}
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const item=connectorDrag,targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(sphere=>sphere.id===targetEl.dataset.id);
-    if(target&&target.id!==item.fromId)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromX:item.from.x,fromY:item.from.y,toX:event.clientX,toY:event.clientY+scrollY});
+    const item=connectorDrag,fromSphere=state.spheres.find(sphere=>sphere.id===item.fromId),target=state.spheres.find(sphere=>sphere.id===item.toId);
+    if(fromSphere&&target)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromAnchor:localAnchor(fromSphere,item.from),toAnchor:localAnchor(target,item.to),fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y});
     connectorDrag=null;render();scheduleSave();return;
   }
   if(arrowDrag&&event.pointerId===arrowDrag.id){const changed=arrowDrag.moved;arrowDrag=null;render();if(changed)scheduleSave();return}
