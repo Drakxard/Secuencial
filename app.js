@@ -1,6 +1,6 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
-let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 const caretPositions=new Map();
 const selectionRanges=new Map();
@@ -10,7 +10,8 @@ function normalizeDocument(value){
   const rawCategories=Array.isArray(value?.categories)?value.categories:[{name:'EO',pages:Array.isArray(value?.pages)?value.pages:Array.isArray(value?.spheres)?[value]:[]}];
   const normalizedCategories=rawCategories.map((category,index)=>{
     const validPages=(Array.isArray(category?.pages)?category.pages:[]).filter(page=>Array.isArray(page?.spheres)&&typeof page?.color==='string');
-    return{name:String(category?.name||`Categoría ${index+1}`),pages:validPages.length?validPages:[{color:randomColor(),spheres:[]}]};
+    validPages.forEach(page=>{if(!Array.isArray(page.arrows))page.arrows=[]});
+    return{name:String(category?.name||`Categoría ${index+1}`),pages:validPages.length?validPages:[{color:randomColor(),spheres:[],arrows:[]}]};
   });
   return{categories:normalizedCategories.length?normalizedCategories:[{name:'EO',pages:[{color:randomColor(),spheres:[]}]}],updatedAt:value?.updatedAt??0};
 }
@@ -34,14 +35,36 @@ function selected(){return state.spheres.find(s=>s.id===selectedId)}
 function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,caretPositions.get(sphere.id)??sphere.text.length));return selectionRanges.get(sphere.id)??{anchor:caret,focus:caret}}
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
-function focusSphere(id){selectedId=id;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
-function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null}
+function arrows(){return state.arrows??(state.arrows=[])}
+function focusSphere(id){selectedArrowId=null;selectedId=id;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
+function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
 function sphereHeight(s){return s.shape==='square'?(s.height??sphereSize(s)):sphereSize(s)}
 function spherePadding(s){return s.shape==='square'?8:Math.min(sphereWidth(s),sphereHeight(s))*.15}
 function position(index,s){const size=sphereSize(s);if(!contracted)return{x:s.x,y:s.y};const n=Math.min(index,8);return{x:Math.max(12,(innerWidth-size)/2)+n*3,y:Math.max(12,(innerHeight-size)/2)+n*3}}
 function canvasHeight(){return Math.max(innerHeight*3,state.spheres.reduce((bottom,sphere)=>Math.max(bottom,sphere.y+sphereHeight(sphere)+Math.round(innerHeight*.7)),innerHeight))}
+
+function borderPoint(sphere,x,y){
+  const w=sphereWidth(sphere),h=sphereHeight(sphere),cx=sphere.x+w/2,cy=sphere.y+h/2,dx=x-cx,dy=y-cy;
+  if(sphere.shape!=='square'){const length=Math.hypot(dx/(w/2),dy/(h/2))||1;return{x:cx+dx/length,y:cy+dy/length}}
+  const scale=1/Math.max(Math.abs(dx)/(w/2),Math.abs(dy)/(h/2),.0001);return{x:cx+dx*scale,y:cy+dy*scale};
+}
+function arrowEndpoint(arrow,end){
+  const sphere=state.spheres.find(item=>item.id===arrow[`${end}Id`]);
+  if(!sphere)return{x:arrow[`${end}X`],y:arrow[`${end}Y`]};
+  const otherId=arrow[end==='from'?'toId':'fromId'],other=state.spheres.find(item=>item.id===otherId);
+  const target=other?{x:other.x+sphereWidth(other)/2,y:other.y+sphereHeight(other)/2}:{x:arrow[end==='from'?'toX':'fromX'],y:arrow[end==='from'?'toY':'fromY']};
+  return borderPoint(sphere,target.x,target.y);
+}
+function renderArrows(){
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('arrows-layer');
+  const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),tip=document.createElementNS(ns,'path');
+  marker.setAttribute('id','arrow-tip');marker.setAttribute('viewBox','0 0 12 12');marker.setAttribute('refX','10');marker.setAttribute('refY','6');marker.setAttribute('markerWidth','9');marker.setAttribute('markerHeight','9');marker.setAttribute('orient','auto-start-reverse');tip.setAttribute('d','M 1 1 L 11 6 L 1 11 z');marker.append(tip);defs.append(marker);svg.append(defs);
+  arrows().forEach(arrow=>{const from=arrowEndpoint(arrow,'from'),to=arrowEndpoint(arrow,'to'),group=document.createElementNS(ns,'g'),hit=document.createElementNS(ns,'path'),line=document.createElementNS(ns,'path'),bend=Math.min(80,Math.hypot(to.x-from.x,to.y-from.y)*.18),d=`M ${from.x} ${from.y} Q ${(from.x+to.x)/2-bend*.25} ${(from.y+to.y)/2-bend} ${to.x} ${to.y}`;group.classList.add('arrow-item');if(arrow.id===selectedArrowId)group.classList.add('selected');group.dataset.arrowId=arrow.id;hit.classList.add('arrow-hit');line.classList.add('arrow-line');hit.setAttribute('d',d);line.setAttribute('d',d);line.setAttribute('marker-end','url(#arrow-tip)');group.append(hit,line);svg.append(group)});
+  if(connectorDrag){const preview=document.createElementNS(ns,'path'),from=connectorDrag.from,to=connectorDrag.to;preview.classList.add('arrow-line','preview');preview.setAttribute('d',`M ${from.x} ${from.y} Q ${(from.x+to.x)/2} ${(from.y+to.y)/2-35} ${to.x} ${to.y}`);preview.setAttribute('marker-end','url(#arrow-tip)');svg.append(preview)}
+  board.append(svg);
+}
 
 function openPosition(size){
   const margin=18,maxX=Math.max(margin,innerWidth-size-margin),minY=scrollY+margin,maxY=Math.max(minY,scrollY+innerHeight-size-margin),candidates=[];
@@ -122,6 +145,7 @@ function fitSquareToText(sphere,el,text){
 function render(){
   board.replaceChildren();
   board.style.height=`${canvasHeight()}px`;
+  renderArrows();
   state.spheres.forEach((sphere,index)=>{
     const el=document.createElement('article'),pos=position(index,sphere),text=document.createElement('div');
     el.className=`sphere${sphere.shape==='square'?' square':''}${selectedIds.has(sphere.id)?' selected':''}${sphere.id===selectedId?' focused':''}`; el.dataset.id=sphere.id;
@@ -152,6 +176,12 @@ function addSphere(selectSphere=true){
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();
+}
+
+function isConnectorBorder(sphere,event,el){
+  const rect=el.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,w=rect.width,h=rect.height;
+  if(sphere.shape!=='square')return Math.abs(Math.hypot((x-w/2)/(w/2),(y-h/2)/(h/2))-1)<.13;
+  const near=Math.min(x,y,w-x,h-y)<12,corner=(x<24||x>w-24)&&(y<24||y>h-24);return near&&!corner;
 }
 
 function closeColorPalette(){colorPalette?.remove();colorPalette=null}
@@ -279,6 +309,7 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
+  if(selectedArrowId&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();state.arrows=arrows().filter(arrow=>arrow.id!==selectedArrowId);selectedArrowId=null;render();scheduleSave();return}
   if(event.key==='Alt'||event.code==='AltLeft'||event.code==='AltRight'){
     altKeyHeld=true;event.preventDefault();return;
   }
@@ -339,6 +370,12 @@ document.addEventListener('paste',event=>{
 board.addEventListener('pointerdown',event=>{
   if(event.target.closest('.color-palette'))return;
   closeColorPalette();
+  const arrowEl=event.target.closest('.arrow-item');
+  if(arrowEl){
+    const arrow=arrows().find(item=>item.id===arrowEl.dataset.arrowId);if(!arrow)return;
+    focusSphere(null);selectedArrowId=arrow.id;const from=arrowEndpoint(arrow,'from'),to=arrowEndpoint(arrow,'to');
+    arrowDrag={id:event.pointerId,arrow,startX:event.clientX,startY:event.clientY,from,to};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
+  }
   const el=event.target.closest('.sphere');
   if(!el){
     categoryBar.hidden=true;
@@ -357,6 +394,11 @@ board.addEventListener('pointerdown',event=>{
     selectedId=sphere.id;selectedIds=new Set([sphere.id]);lastSphereClick=null;
     resizeDrag={id:event.pointerId,sphere,corner:handle.dataset.corner,startX:event.clientX,startY:event.clientY,x:sphere.x,y:sphere.y,width:sphereWidth(sphere),height:sphereHeight(sphere)};
     el.setPointerCapture(event.pointerId);event.preventDefault();return;
+  }
+  const borderSphere=state.spheres.find(item=>item.id===el.dataset.id);
+  if(borderSphere&&isConnectorBorder(borderSphere,event,el)){
+    const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);focusSphere(null);
+    connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
   const now=performance.now(),previous=lastSphereClick;
   if(previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
@@ -385,6 +427,8 @@ board.addEventListener('dblclick',event=>{
 });
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
+  if(connectorDrag&&event.pointerId===connectorDrag.id){connectorDrag.to={x:event.clientX,y:event.clientY+scrollY};render();return}
+  if(arrowDrag&&event.pointerId===arrowDrag.id){const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<5)return;const arrow=arrowDrag.arrow;arrowDrag.moved=true;Object.assign(arrow,{fromId:null,toId:null,fromX:arrowDrag.from.x+dx,fromY:arrowDrag.from.y+dy,toX:arrowDrag.to.x+dx,toY:arrowDrag.to.y+dy});render();return}
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
@@ -424,6 +468,12 @@ function updateMarquee(x,y){
 function endDrag(event){
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
+  if(connectorDrag&&event.pointerId===connectorDrag.id){
+    const item=connectorDrag,targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(sphere=>sphere.id===targetEl.dataset.id);
+    if(target&&target.id!==item.fromId)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromX:item.from.x,fromY:item.from.y,toX:event.clientX,toY:event.clientY+scrollY});
+    connectorDrag=null;render();scheduleSave();return;
+  }
+  if(arrowDrag&&event.pointerId===arrowDrag.id){const changed=arrowDrag.moved;arrowDrag=null;render();if(changed)scheduleSave();return}
   if(marquee&&event.pointerId===marquee.id){marquee.element.remove();marquee=null;render();return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){resizeDrag=null;scheduleSave();render();return}
   if(!drag||event.pointerId!==drag.id)return;drag=null;scheduleSave();render()
