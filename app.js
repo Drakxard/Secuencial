@@ -3,6 +3,7 @@ const board=document.querySelector('#board'), notice=document.querySelector('#fo
 let directoryHandle=null, saveTimer=null, selectedId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 let copiedElement=null,elementPasteCount=0;
+let history=[],historyIndex=-1,restoringHistory=false;
 const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
@@ -17,6 +18,22 @@ function normalizeDocument(value){
   return{categories:normalizedCategories.length?normalizedCategories:[{name:'EO',pages:[{color:randomColor(),spheres:[]}]}],updatedAt:value?.updatedAt??0};
 }
 function documentState(){return{categories,updatedAt:Math.max(0,...categories.flatMap(category=>category.pages.map(page=>page.updatedAt??0)))}}
+function historySnapshot(){return{categories:structuredClone(categories),currentCategory,currentPage}}
+function resetHistory(){history=[historySnapshot()];historyIndex=0}
+function recordHistory(){
+  if(restoringHistory)return;
+  const snapshot=historySnapshot(),comparable=value=>JSON.stringify(value,(key,item)=>key==='updatedAt'?undefined:item),serialized=comparable(snapshot),current=history[historyIndex];
+  if(current&&comparable(current)===serialized)return;
+  history=history.slice(0,historyIndex+1);history.push(snapshot);if(history.length>100)history.shift();historyIndex=history.length-1;
+}
+function restoreHistory(direction){
+  const next=historyIndex+direction;if(next<0||next>=history.length)return false;
+  restoringHistory=true;historyIndex=next;
+  const snapshot=structuredClone(history[historyIndex]);categories=snapshot.categories;
+  currentCategory=Math.min(snapshot.currentCategory,categories.length-1);pages=categories[currentCategory].pages;
+  currentPage=Math.min(snapshot.currentPage,pages.length-1);state=pages[currentPage];
+  focusSphere(null);contracted=false;render();savePageIndex();localStorage.setItem(CATEGORY_KEY,String(currentCategory));saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220);restoringHistory=false;return true;
+}
 function savedPageIndex(){
   try{const value=JSON.parse(localStorage.getItem(PAGE_KEY));if(value&&typeof value==='object')return Number(value[currentCategory])||0}catch{}
   const legacy=Number(localStorage.getItem(PAGE_KEY));return Number.isInteger(legacy)&&legacy>=0?legacy:0;
@@ -317,6 +334,8 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
+  if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
+  if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='y'){if(restoreHistory(1))event.preventDefault();return}
   if(selectedArrowId&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();state.arrows=arrows().filter(arrow=>arrow.id!==selectedArrowId);selectedArrowId=null;render();scheduleSave();return}
   if(event.key==='Alt'||event.code==='AltLeft'||event.code==='AltRight'){
     altKeyHeld=true;event.preventDefault();return;
@@ -580,7 +599,7 @@ function restoreBackup(){
   try{const stored=localStorage.getItem(BACKUP_KEY);if(!stored)return false;const loaded=JSON.parse(stored);if(!Array.isArray(loaded.categories)&&!Array.isArray(loaded.pages)&&!Array.isArray(loaded.spheres))return false;setDocument(loaded);return true}
   catch(error){console.warn('No se pudo recuperar el respaldo local.',error);return false}
 }
-function scheduleSave(){state.updatedAt=Date.now();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)}
+function scheduleSave(){state.updatedAt=Date.now();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)}
 async function saveState(){
   if(!directoryHandle)return;
   try{const handle=await directoryHandle.getFileHandle(STATE_FILE,{create:true}),writable=await handle.createWritable();await writable.write(JSON.stringify(documentState(),null,2));await writable.close()}
@@ -590,7 +609,7 @@ async function loadState(){
   const backupState=structuredClone(documentState());
   try{const handle=await directoryHandle.getFileHandle(STATE_FILE),file=await handle.getFile(),loaded=JSON.parse(await file.text());if((Array.isArray(loaded.categories)||Array.isArray(loaded.pages)||Array.isArray(loaded.spheres))&&shouldUseFolderState(loaded,backupState))setDocument(loaded)}
   catch(error){if(error.name!=='NotFoundError')console.warn('No se pudo leer la carpeta; se usará el respaldo local.',error);restoreBackup();}
-  saveBackup();focusSphere(null);render();restoreScroll();
+  saveBackup();focusSphere(null);render();resetHistory();restoreScroll();
 }
 function openDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open('esferas-local',1);req.onupgradeneeded=()=>req.result.createObjectStore('handles');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
 async function storeHandle(handle){const db=await openDb(),tx=db.transaction('handles','readwrite');tx.objectStore('handles').put(handle,'directory');await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
@@ -603,10 +622,10 @@ choose.addEventListener('click',async()=>{
 });
 
 async function init(){
-  restoreBackup();
+  restoreBackup();resetHistory();
   if(!('showDirectoryPicker'in window)){notice.hidden=false;choose.disabled=true;errorText.textContent='Este navegador no admite acceso local a carpetas. Usa Chrome o Edge.';document.documentElement.classList.remove('restoring-view');return}
   try{const stored=await recoverHandle();if(stored&&await stored.queryPermission({mode:'readwrite'})==='granted'){directoryHandle=stored;await loadState();if(!state.spheres.length)addSphere(false);return}}catch(error){console.error(error)}
-  notice.hidden=false;render();restoreScroll();
+  notice.hidden=false;render();resetHistory();restoreScroll();
 }
 window.addEventListener('beforeunload',()=>{saveScroll();saveBackup()});
-init();
+resetHistory();init();
