@@ -198,7 +198,7 @@ function render(){
       if(!sphere.text){const placeholder=document.createElement('span');placeholder.className='text-placeholder';placeholder.textContent='Escribe…';text.append(placeholder)}
     }else{if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);else{text.textContent='Escribe…';text.style.opacity='.48'}}
     el.append(text);
-    if(sphere.shape==='square'&&sphere.id===selectedId){
+    if(sphere.shape==='square'){
       ['nw','ne','sw','se'].forEach(corner=>{const handle=document.createElement('span');handle.className=`resize-handle ${corner}`;handle.dataset.corner=corner;el.append(handle)});
     }
     board.append(el);fitSquareToText(sphere,el,text);
