@@ -180,8 +180,8 @@ function fitSquareToText(sphere,el,text){
   measure.querySelectorAll('.text-caret').forEach(caret=>caret.remove());
   Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',maxWidth:'none',height:'auto',visibility:'hidden',whiteSpace:'pre',pointerEvents:'none'});
   document.body.append(measure);
-  const naturalWidth=measure.scrollWidth+padding*2+8;measure.remove();
-  const maxWidth=Math.max(90,innerWidth-sphere.x-18),nextWidth=Math.min(maxWidth,Math.max(sphereWidth(sphere),naturalWidth));
+  const naturalWidth=Math.ceil(Math.max(measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
+  const nextWidth=Math.max(sphereWidth(sphere),naturalWidth);
   if(nextWidth>sphereWidth(sphere)+.5){sphere.width=nextWidth;el.style.setProperty('--sphere-width',`${nextWidth}px`);changed=true}
   const neededHeight=text.scrollHeight+padding*2+12,nextHeight=Math.max(90,neededHeight);
   if(Math.abs(nextHeight-sphereHeight(sphere))>.5){sphere.height=nextHeight;el.style.setProperty('--sphere-height',`${nextHeight}px`);changed=true}

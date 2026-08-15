@@ -19,7 +19,7 @@ html.restoring-view #board,html.restoring-view .bg-blob { visibility:hidden; }
 .sphere.dragging { cursor:grabbing; transition:none; }
 .sphere.connector-ready { cursor:crosshair; }
 .sphere.square { place-items:start; border-radius:18px; transition:padding .18s ease,transform .18s ease,box-shadow .18s ease; }
-.sphere.square .sphere-text { text-align:left; white-space:pre; overflow-wrap:normal; }
+.sphere.square .sphere-text { min-width:max-content; text-align:left; white-space:pre; overflow-wrap:normal; }
 .resize-handle { position:absolute; width:max(10%,28px); height:max(10%,28px); background:transparent; opacity:0; }
 .resize-handle.nw { left:-4px; top:-4px; cursor:nwse-resize; }
 .resize-handle.ne { right:-4px; top:-4px; cursor:nesw-resize; }
