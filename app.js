@@ -1,6 +1,6 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
-let directoryHandle=null, saveTimer=null, selectedId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 let copiedElement=null,elementPasteCount=0;
 let history=[],historyIndex=-1,restoringHistory=false;
@@ -84,6 +84,7 @@ function curvedArrowPath(from,to){
 }
 function renderArrows(){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('arrows-layer');
+  svg.style.setProperty('--arrow-color',state.arrowColor??'#202020');
   const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),tip=document.createElementNS(ns,'path');
   marker.setAttribute('id','arrow-tip');marker.setAttribute('viewBox','0 0 14 14');marker.setAttribute('refX','11.5');marker.setAttribute('refY','7');marker.setAttribute('markerWidth','2.7');marker.setAttribute('markerHeight','2.7');marker.setAttribute('orient','auto');tip.setAttribute('d','M 2 2 L 12 7 L 2 12');tip.setAttribute('fill','none');tip.setAttribute('stroke','context-stroke');tip.setAttribute('stroke-width','3.4');tip.setAttribute('stroke-linecap','round');tip.setAttribute('stroke-linejoin','round');marker.append(tip);defs.append(marker);svg.append(defs);
   arrows().forEach(arrow=>{const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),group=document.createElementNS(ns,'g'),hit=document.createElementNS(ns,'path'),line=document.createElementNS(ns,'path'),d=curvedArrowPath(from,to);group.classList.add('arrow-item');if(arrow.id===selectedArrowId)group.classList.add('selected');group.dataset.arrowId=arrow.id;hit.classList.add('arrow-hit');line.classList.add('arrow-line');hit.setAttribute('d',d);line.setAttribute('d',d);line.setAttribute('marker-end','url(#arrow-tip)');group.append(hit,line);svg.append(group)});
@@ -210,20 +211,20 @@ function isConnectorBorder(sphere,event,el){
 }
 
 function closeColorPalette(){colorPalette?.remove();colorPalette=null}
-function openColorPalette(sphere){
+function openColorPalette(sphere,forArrows=false){
   closeColorPalette();
   const palette=document.createElement('div');palette.className='color-palette';palette.setAttribute('aria-label','Color de los elementos');
   for(let row=0;row<8;row++)for(let col=0;col<16;col++){
     const color=`hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`,swatch=document.createElement('button');
     swatch.type='button';swatch.className='color-swatch';swatch.style.background=color;swatch.title=color;
     swatch.addEventListener('pointerdown',event=>event.stopPropagation());
-    swatch.addEventListener('click',event=>{event.stopPropagation();state.color=color;closeColorPalette();render();scheduleSave()});
+    swatch.addEventListener('click',event=>{event.stopPropagation();if(forArrows)state.arrowColor=color;else state.color=color;closeColorPalette();render();scheduleSave()});
     palette.append(swatch);
   }
   board.append(palette);colorPalette=palette;
-  const width=palette.offsetWidth,height=palette.offsetHeight,gap=12,itemWidth=sphereWidth(sphere);
-  let left=sphere.x+itemWidth+gap;if(left+width>innerWidth-8)left=Math.max(8,sphere.x-width-gap);
-  const top=Math.max(scrollY+8,Math.min(sphere.y,scrollY+innerHeight-height-8));
+  const width=palette.offsetWidth,height=palette.offsetHeight,gap=12,itemWidth=sphere?sphereWidth(sphere):0;
+  let left=sphere?sphere.x+itemWidth+gap:mouse.x+gap;if(left+width>innerWidth-8)left=Math.max(8,(sphere?sphere.x:mouse.x)-width-gap);
+  const anchorY=sphere?sphere.y:mouse.y,top=Math.max(scrollY+8,Math.min(anchorY,scrollY+innerHeight-height-8));
   Object.assign(palette.style,{left:`${left}px`,top:`${top}px`});
 }
 
@@ -359,7 +360,6 @@ document.addEventListener('keydown',event=>{
     if(resizeSelection(!shrinkKey))event.preventDefault();return;
   }
   if(changeListLevel(event)){event.preventDefault();return}
-  if(event.key==='+'){event.preventDefault();addSphere();return}
   if(moveCaret(event)){event.preventDefault();return}
   if(type(event))event.preventDefault();
 });
@@ -412,7 +412,9 @@ board.addEventListener('pointerdown',event=>{
   if(arrowEl){
     const arrow=arrows().find(item=>item.id===arrowEl.dataset.arrowId);if(!arrow)return;
     focusSphere(null);selectedArrowId=arrow.id;const from=arrowEndpoint(arrow,'from'),to=arrowEndpoint(arrow,'to');
-    arrowDrag={id:event.pointerId,arrow,startX:event.clientX,startY:event.clientY,from,to};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
+    mouse={x:event.clientX,y:event.clientY+scrollY};arrowDrag={id:event.pointerId,arrow,startX:event.clientX,startY:event.clientY,from,to};
+    arrowHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{if(!arrowHold||arrowHold.id!==event.pointerId)return;arrowHold=null;arrowDrag=null;openColorPalette(null,true)},700)};
+    board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
   const el=event.target.closest('.sphere');
   if(!el){
@@ -466,7 +468,7 @@ board.addEventListener('dblclick',event=>{
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
   if(connectorDrag&&event.pointerId===connectorDrag.id){connectorDrag.to={x:event.clientX,y:event.clientY+scrollY};render();return}
-  if(arrowDrag&&event.pointerId===arrowDrag.id){const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<5)return;const arrow=arrowDrag.arrow;arrowDrag.moved=true;Object.assign(arrow,{fromId:null,toId:null,fromX:arrowDrag.from.x+dx,fromY:arrowDrag.from.y+dy,toX:arrowDrag.to.x+dx,toY:arrowDrag.to.y+dy});render();return}
+  if(arrowDrag&&event.pointerId===arrowDrag.id){const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}const arrow=arrowDrag.arrow;arrowDrag.moved=true;Object.assign(arrow,{fromId:null,toId:null,fromX:arrowDrag.from.x+dx,fromY:arrowDrag.from.y+dy,toX:arrowDrag.to.x+dx,toY:arrowDrag.to.y+dy});render();return}
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
@@ -506,6 +508,7 @@ function updateMarquee(x,y){
 function endDrag(event){
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
+  if(arrowHold&&event.pointerId===arrowHold.id){clearTimeout(arrowHold.timer);arrowHold=null}
   if(connectorDrag&&event.pointerId===connectorDrag.id){
     const item=connectorDrag,targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(sphere=>sphere.id===targetEl.dataset.id);
     if(target&&target.id!==item.fromId)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromX:item.from.x,fromY:item.from.y,toX:event.clientX,toY:event.clientY+scrollY});
