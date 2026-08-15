@@ -61,6 +61,7 @@ function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
 function sphereHeight(s){return s.shape==='square'?(s.height??sphereSize(s)):sphereSize(s)}
 function spherePadding(s){return s.shape==='square'?8:Math.min(sphereWidth(s),sphereHeight(s))*.15}
+function squareMinHeight(s){return Math.ceil(17*(s.fontScale??1)*1.25+spherePadding(s)*2+12)}
 function position(index,s){const size=sphereSize(s);if(!contracted)return{x:s.x,y:s.y};const n=Math.min(index,8);return{x:Math.max(12,(innerWidth-size)/2)+n*3,y:Math.max(12,(innerHeight-size)/2)+n*3}}
 function canvasHeight(){return Math.max(innerHeight*3,state.spheres.reduce((bottom,sphere)=>Math.max(bottom,sphere.y+sphereHeight(sphere)+Math.round(innerHeight*.7)),innerHeight))}
 
@@ -180,10 +181,12 @@ function fitSquareToText(sphere,el,text){
   measure.querySelectorAll('.text-caret').forEach(caret=>caret.remove());
   Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',maxWidth:'none',height:'auto',visibility:'hidden',whiteSpace:'pre',pointerEvents:'none'});
   document.body.append(measure);
-  const naturalWidth=Math.ceil(Math.max(measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
+  const contentRange=document.createRange();contentRange.selectNodeContents(text);
+  const renderedWidth=contentRange.getBoundingClientRect().width;
+  const naturalWidth=Math.ceil(Math.max(renderedWidth,text.scrollWidth,measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
   const nextWidth=Math.max(sphereWidth(sphere),naturalWidth);
   if(nextWidth>sphereWidth(sphere)+.5){sphere.width=nextWidth;el.style.setProperty('--sphere-width',`${nextWidth}px`);changed=true}
-  const neededHeight=text.scrollHeight+padding*2+12,nextHeight=Math.max(90,neededHeight);
+  const neededHeight=text.scrollHeight+padding*2+12,nextHeight=Math.max(squareMinHeight(sphere),neededHeight);
   if(Math.abs(nextHeight-sphereHeight(sphere))>.5){sphere.height=nextHeight;el.style.setProperty('--sphere-height',`${nextHeight}px`);changed=true}
   if(changed)scheduleSave();
 }
@@ -348,7 +351,7 @@ function resizeSelection(grow){
       if(item.shape==='square'){
         const factor=grow?1.05:.95;
         item.width=Math.max(90,Math.min(innerWidth,sphereWidth(item)*factor));
-        item.height=Math.max(90,sphereHeight(item)*factor);
+        item.height=Math.max(squareMinHeight(item),sphereHeight(item)*factor);
       }else item.scale=Math.max(.4,Math.min(3,(item.scale??1)*(grow?1.05:.95)));
       item.x=Math.max(0,Math.min(innerWidth-sphereWidth(item),item.x));
       item.y=Math.max(0,item.y);
@@ -539,12 +542,12 @@ board.addEventListener('pointermove',event=>{
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){
-    const item=resizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,min=90;
+    const item=resizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,minWidth=90,minHeight=squareMinHeight(item.sphere);
     let left=item.x,right=item.x+item.width,top=item.y,bottom=item.y+item.height;
-    if(item.corner.includes('e'))right=Math.min(innerWidth,Math.max(left+min,right+dx));
-    if(item.corner.includes('w'))left=Math.max(0,Math.min(right-min,left+dx));
-    if(item.corner.includes('s'))bottom=Math.max(top+min,bottom+dy);
-    if(item.corner.includes('n'))top=Math.max(0,Math.min(bottom-min,top+dy));
+    if(item.corner.includes('e'))right=Math.min(innerWidth,Math.max(left+minWidth,right+dx));
+    if(item.corner.includes('w'))left=Math.max(0,Math.min(right-minWidth,left+dx));
+    if(item.corner.includes('s'))bottom=Math.max(top+minHeight,bottom+dy);
+    if(item.corner.includes('n'))top=Math.max(0,Math.min(bottom-minHeight,top+dy));
     Object.assign(item.sphere,{x:left,y:top,width:right-left,height:bottom-top});
     const active=board.querySelector(`[data-id="${item.sphere.id}"]`);
     Object.assign(active.style,{left:`${left}px`,top:`${top}px`});active.style.setProperty('--sphere-width',`${right-left}px`);active.style.setProperty('--sphere-height',`${bottom-top}px`);updateRenderedArrows();return;
