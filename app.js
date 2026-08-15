@@ -269,6 +269,20 @@ function moveCaretByVisibleRow(sphere,caret,direction){
   return target.points.reduce((best,point)=>Math.abs(point.x-current.x)<Math.abs(best.x-current.x)?point:best).index;
 }
 
+function caretFromPoint(sphere,clientX,clientY){
+  const visibleText=board.querySelector(`[data-id="${sphere.id}"] .sphere-text`);if(!visibleText||!sphere.text)return 0;
+  const rect=visibleText.getBoundingClientRect(),style=getComputedStyle(visibleText),measure=document.createElement('div'),textNode=document.createTextNode(sphere.text);
+  Object.assign(measure.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${visibleText.clientWidth}px`,height:'auto',padding:'0',margin:'0',visibility:'hidden',pointerEvents:'none',whiteSpace:'pre-wrap',overflowWrap:'anywhere',textAlign:style.textAlign,font:style.font,lineHeight:style.lineHeight,letterSpacing:style.letterSpacing});
+  measure.append(textNode);document.body.append(measure);let best={index:0,distance:Infinity};
+  for(let index=0;index<=sphere.text.length;index++){
+    const range=document.createRange();range.setStart(textNode,index);range.collapse(true);let point=range.getBoundingClientRect();
+    if(!point.height&&index<sphere.text.length){range.setEnd(textNode,index+1);point=range.getBoundingClientRect()}
+    if(!point.height&&index>0){range.setStart(textNode,index-1);point=range.getBoundingClientRect();point={left:point.right,top:point.top,height:point.height}}
+    const x=point.left,y=point.top+point.height/2,distance=Math.hypot(x-clientX,(y-clientY)*1.8);if(distance<best.distance)best={index,distance};
+  }
+  measure.remove();return best.index;
+}
+
 function skipListMarkers(sphere,position,direction){
   if(sphere.shape!=='square')return position;
   const lineStart=sphere.text.lastIndexOf('\n',position-1)+1;
@@ -448,9 +462,10 @@ board.addEventListener('pointerdown',event=>{
   }
   lastSphereClick={id:el.dataset.id,time:now,x:event.clientX,y:event.clientY};
   mouse={x:event.clientX,y:event.clientY+scrollY};
+  const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
   if(!selectedIds.has(el.dataset.id))focusSphere(el.dataset.id);
   else{selectedId=el.dataset.id}
-  const clickedSphere=selected();if(clickedSphere)setRange(clickedSphere,clickedSphere.text.length);
+  const clickedSphere=selected();if(clickedSphere)setRange(clickedSphere,clickedCaret);
   elementHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{
     if(!elementHold||elementHold.id!==event.pointerId)return;
     elementHold=null;drag=null;lastSphereClick=null;el.classList.remove('dragging');openColorPalette(clickedSphere);
