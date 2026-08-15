@@ -94,6 +94,13 @@ function renderArrows(){
   if(connectorDrag){const borderFrom=connectorDrag.from,rawTo=connectorDrag.to,from=shortenArrowEnd(rawTo,borderFrom,6),to=shortenArrowEnd(borderFrom,rawTo,7),preview=document.createElementNS(ns,'path');preview.classList.add('arrow-line','preview');preview.setAttribute('d',curvedArrowPath(from,to));preview.setAttribute('marker-end','url(#arrow-tip)');svg.append(preview)}
   board.append(svg);
 }
+function updateRenderedArrows(){
+  arrows().forEach(arrow=>{
+    const group=board.querySelector(`.arrow-item[data-arrow-id="${arrow.id}"]`);if(!group)return;
+    const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),path=curvedArrowPath(from,to);
+    group.querySelectorAll('path').forEach(item=>item.setAttribute('d',path));
+  });
+}
 
 function openPosition(size){
   const margin=18,maxX=Math.max(margin,innerWidth-size-margin),minY=scrollY+margin,maxY=Math.max(minY,scrollY+innerHeight-size-margin),candidates=[];
@@ -518,7 +525,7 @@ board.addEventListener('pointermove',event=>{
     if(item.corner.includes('n'))top=Math.max(0,Math.min(bottom-min,top+dy));
     Object.assign(item.sphere,{x:left,y:top,width:right-left,height:bottom-top});
     const active=board.querySelector(`[data-id="${item.sphere.id}"]`);
-    Object.assign(active.style,{left:`${left}px`,top:`${top}px`});active.style.setProperty('--sphere-width',`${right-left}px`);active.style.setProperty('--sphere-height',`${bottom-top}px`);return;
+    Object.assign(active.style,{left:`${left}px`,top:`${top}px`});active.style.setProperty('--sphere-width',`${right-left}px`);active.style.setProperty('--sphere-height',`${bottom-top}px`);updateRenderedArrows();return;
   }
   if(!drag||event.pointerId!==drag.id)return;
   if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>=7)lastSphereClick=null;
@@ -530,6 +537,7 @@ board.addEventListener('pointermove',event=>{
     item.sphere.x=item.x+dx;item.sphere.y=item.y+dy;
     const el=board.querySelector(`[data-id="${item.sphere.id}"]`);el.style.left=`${item.sphere.x}px`;el.style.top=`${item.sphere.y}px`;
   });
+  updateRenderedArrows();
 });
 function updateMarquee(x,y){
   const left=Math.min(marquee.startX,x), top=Math.min(marquee.startY,y), width=Math.abs(x-marquee.startX), height=Math.abs(y-marquee.startY);
