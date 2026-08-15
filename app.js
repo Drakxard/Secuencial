@@ -78,6 +78,16 @@ function arrowEndpoint(arrow,end){
   return borderPoint(sphere,target.x,target.y);
 }
 function localAnchor(sphere,point){return{x:(point.x-sphere.x)/sphereWidth(sphere),y:(point.y-sphere.y)/sphereHeight(sphere)}}
+function nearbySphereAt(x,y,excludeId=null,padding=34){
+  let best=null,bestDistance=Infinity;
+  state.spheres.forEach(sphere=>{
+    if(sphere.id===excludeId)return;
+    const w=sphereWidth(sphere),h=sphereHeight(sphere),cx=sphere.x+w/2,cy=sphere.y+h/2,dx=x-cx,dy=y-cy;
+    const inside=sphere.shape==='square'?x>=sphere.x-padding&&x<=sphere.x+w+padding&&y>=sphere.y-padding&&y<=sphere.y+h+padding:Math.hypot(dx/(w/2+padding),dy/(h/2+padding))<=1;
+    const distance=Math.hypot(dx,dy);if(inside&&distance<bestDistance){best=sphere;bestDistance=distance}
+  });
+  return best;
+}
 function shortenArrowEnd(from,to,distance=7){
   const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;
   return{x:to.x-dx/length*distance,y:to.y-dy/length*distance};
@@ -449,7 +459,8 @@ board.addEventListener('pointerdown',event=>{
   if(arrowEl){
     const arrow=arrows().find(item=>item.id===arrowEl.dataset.arrowId);if(!arrow)return;
     focusSphere(null);selectedArrowId=arrow.id;const from=arrowEndpoint(arrow,'from'),to=arrowEndpoint(arrow,'to');
-    mouse={x:event.clientX,y:event.clientY+scrollY};arrowDrag={id:event.pointerId,arrow,startX:event.clientX,startY:event.clientY,from,to};
+    const point={x:event.clientX,y:event.clientY+scrollY},end=Math.hypot(point.x-from.x,point.y-from.y)<=Math.hypot(point.x-to.x,point.y-to.y)?'from':'to';
+    mouse=point;arrowDrag={id:event.pointerId,arrow,end,startX:event.clientX,startY:event.clientY,from,to};
     arrowHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{if(!arrowHold||arrowHold.id!==event.pointerId)return;arrowHold=null;arrowDrag=null;openColorPalette(null,true)},700)};
     board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
@@ -512,12 +523,18 @@ board.addEventListener('pointermove',event=>{
     if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(item=>item.id===targetEl.dataset.id);
+    const target=nearbySphereAt(event.clientX,event.clientY+scrollY,connectorDrag.fromId);
     if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.to=borderPoint(target,event.clientX,event.clientY+scrollY)}
     else{connectorDrag.toId=null;connectorDrag.to={x:event.clientX,y:event.clientY+scrollY}}
     render();return;
   }
-  if(arrowDrag&&event.pointerId===arrowDrag.id){const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}const arrow=arrowDrag.arrow;arrowDrag.moved=true;Object.assign(arrow,{fromId:null,toId:null,fromX:arrowDrag.from.x+dx,fromY:arrowDrag.from.y+dy,toX:arrowDrag.to.x+dx,toY:arrowDrag.to.y+dy});render();return}
+  if(arrowDrag&&event.pointerId===arrowDrag.id){
+    const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}
+    const item=arrowDrag,arrow=item.arrow,end=item.end,other=end==='from'?'to':'from',point={x:event.clientX,y:event.clientY+scrollY},target=nearbySphereAt(point.x,point.y,arrow[`${other}Id`]);item.moved=true;
+    if(target){const attached=borderPoint(target,point.x,point.y);arrow[`${end}Id`]=target.id;arrow[`${end}Anchor`]=localAnchor(target,attached);arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
+    else{arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}X`]=point.x;arrow[`${end}Y`]=point.y}
+    render();return;
+  }
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
