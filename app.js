@@ -1,6 +1,6 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError');
-let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, backgroundHold=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 const caretPositions=new Map();
 const selectionRanges=new Map();
@@ -144,6 +144,24 @@ function addSphere(selectSphere=true){
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();
+}
+
+function closeColorPalette(){colorPalette?.remove();colorPalette=null}
+function openColorPalette(sphere){
+  closeColorPalette();
+  const palette=document.createElement('div');palette.className='color-palette';palette.setAttribute('aria-label','Color de los elementos');
+  for(let row=0;row<8;row++)for(let col=0;col<16;col++){
+    const color=`hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`,swatch=document.createElement('button');
+    swatch.type='button';swatch.className='color-swatch';swatch.style.background=color;swatch.title=color;
+    swatch.addEventListener('pointerdown',event=>event.stopPropagation());
+    swatch.addEventListener('click',event=>{event.stopPropagation();state.color=color;closeColorPalette();render();scheduleSave()});
+    palette.append(swatch);
+  }
+  board.append(palette);colorPalette=palette;
+  const width=palette.offsetWidth,height=palette.offsetHeight,gap=12,itemWidth=sphereWidth(sphere);
+  let left=sphere.x+itemWidth+gap;if(left+width>innerWidth-8)left=Math.max(8,sphere.x-width-gap);
+  const top=Math.max(scrollY+8,Math.min(sphere.y,scrollY+innerHeight-height-8));
+  Object.assign(palette.style,{left:`${left}px`,top:`${top}px`});
 }
 
 function type(event){
@@ -309,6 +327,8 @@ document.addEventListener('paste',event=>{
 });
 
 board.addEventListener('pointerdown',event=>{
+  if(event.target.closest('.color-palette'))return;
+  closeColorPalette();
   const el=event.target.closest('.sphere');
   if(!el){
     lastSphereClick=null;
@@ -338,6 +358,10 @@ board.addEventListener('pointerdown',event=>{
   if(!selectedIds.has(el.dataset.id))focusSphere(el.dataset.id);
   else{selectedId=el.dataset.id}
   const clickedSphere=selected();if(clickedSphere)setRange(clickedSphere,clickedSphere.text.length);
+  elementHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{
+    if(!elementHold||elementHold.id!==event.pointerId)return;
+    elementHold=null;drag=null;lastSphereClick=null;el.classList.remove('dragging');openColorPalette(clickedSphere);
+  },700)};
   contracted=false;
   const movingSpheres=state.spheres.filter(sphere=>selectedIds.has(sphere.id));
   drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y}))};render();
@@ -351,6 +375,7 @@ board.addEventListener('dblclick',event=>{
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
+  if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){
     const item=resizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,min=90;
@@ -387,6 +412,7 @@ function updateMarquee(x,y){
 }
 function endDrag(event){
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
+  if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){marquee.element.remove();marquee=null;render();return}
   if(resizeDrag&&event.pointerId===resizeDrag.id){resizeDrag=null;scheduleSave();render();return}
   if(!drag||event.pointerId!==drag.id)return;drag=null;scheduleSave();render()
