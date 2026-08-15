@@ -443,6 +443,7 @@ board.addEventListener('pointerdown',event=>{
   }
   const el=event.target.closest('.sphere');
   if(!el){
+    selectedArrowId=null;board.querySelectorAll('.arrow-item.selected').forEach(item=>item.classList.remove('selected'));
     categoryBar.hidden=true;
     lastSphereClick=null;
     marquee={id:event.pointerId,startX:event.clientX,startY:event.clientY+scrollY,element:document.createElement('div')};
@@ -500,7 +501,7 @@ board.addEventListener('pointermove',event=>{
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
     const targetEl=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere'),target=targetEl&&state.spheres.find(item=>item.id===targetEl.dataset.id);
-    if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.to=borderPoint(target,connectorDrag.from.x,connectorDrag.from.y)}
+    if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.to=borderPoint(target,event.clientX,event.clientY+scrollY)}
     else{connectorDrag.toId=null;connectorDrag.to={x:event.clientX,y:event.clientY+scrollY}}
     render();return;
   }
