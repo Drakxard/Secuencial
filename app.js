@@ -61,7 +61,7 @@ function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
 function sphereHeight(s){return s.shape==='square'?(s.height??sphereSize(s)):sphereSize(s)}
 function spherePadding(s){return s.shape==='square'?8:Math.min(sphereWidth(s),sphereHeight(s))*.15}
-function squareMinHeight(s){return Math.ceil(17*(s.fontScale??1)*1.25+spherePadding(s)*2+12)}
+function squareMinHeight(s){return Math.ceil(17*(s.fontScale??1)*1.25+spherePadding(s)*2+2)}
 function position(index,s){const size=sphereSize(s);if(!contracted)return{x:s.x,y:s.y};const n=Math.min(index,8);return{x:Math.max(12,(innerWidth-size)/2)+n*3,y:Math.max(12,(innerHeight-size)/2)+n*3}}
 function canvasHeight(){return Math.max(innerHeight*3,state.spheres.reduce((bottom,sphere)=>Math.max(bottom,sphere.y+sphereHeight(sphere)+Math.round(innerHeight*.7)),innerHeight))}
 
@@ -176,19 +176,19 @@ function appendMathText(parent,source,bullets=false,startsLine=true,showTrailing
 
 function fitSquareToText(sphere,el,text){
   if(sphere.shape!=='square')return;
-  let changed=false;
-  const padding=spherePadding(sphere),measure=text.cloneNode(true);
+  const padding=spherePadding(sphere),textStyle=getComputedStyle(text),measure=text.cloneNode(true);
   measure.querySelectorAll('.text-caret').forEach(caret=>caret.remove());
-  Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',maxWidth:'none',height:'auto',visibility:'hidden',whiteSpace:'pre',pointerEvents:'none'});
+  Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',minWidth:'0',maxWidth:'none',height:'max-content',visibility:'hidden',whiteSpace:'pre',font:textStyle.font,lineHeight:textStyle.lineHeight,letterSpacing:textStyle.letterSpacing,pointerEvents:'none'});
   document.body.append(measure);
-  const contentRange=document.createRange();contentRange.selectNodeContents(text);
-  const renderedWidth=contentRange.getBoundingClientRect().width;
-  const naturalWidth=Math.ceil(Math.max(renderedWidth,measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
-  const nextWidth=Math.max(sphereWidth(sphere),naturalWidth);
-  if(nextWidth>sphereWidth(sphere)+.5){sphere.width=nextWidth;el.style.setProperty('--sphere-width',`${nextWidth}px`);changed=true}
-  const neededHeight=text.scrollHeight+padding*2+12,nextHeight=Math.max(squareMinHeight(sphere),neededHeight);
-  if(Math.abs(nextHeight-sphereHeight(sphere))>.5){sphere.height=nextHeight;el.style.setProperty('--sphere-height',`${nextHeight}px`);changed=true}
-  if(changed)scheduleSave();
+  const bounds=measure.getBoundingClientRect();
+  const nextWidth=Math.max(90,Math.ceil(Math.max(bounds.width,measure.scrollWidth)+padding*2+2));
+  const nextHeight=Math.max(squareMinHeight(sphere),Math.ceil(Math.max(bounds.height,measure.scrollHeight)+padding*2+2));
+  measure.remove();
+  const changed=Math.abs(nextWidth-sphereWidth(sphere))>.5||Math.abs(nextHeight-sphereHeight(sphere))>.5;
+  if(!changed)return;
+  sphere.width=nextWidth;sphere.height=nextHeight;
+  el.style.setProperty('--sphere-width',`${nextWidth}px`);el.style.setProperty('--sphere-height',`${nextHeight}px`);
+  board.style.height=`${canvasHeight()}px`;updateRenderedArrows();scheduleSave();
 }
 
 function render(){
@@ -215,7 +215,7 @@ function render(){
       ['nw','ne','sw','se'].forEach(corner=>{const handle=document.createElement('span');handle.className=`resize-handle ${corner}`;handle.dataset.corner=corner;el.append(handle)});
     }
     board.append(el);
-    if(sphere.id===selectedId)fitSquareToText(sphere,el,text);
+    fitSquareToText(sphere,el,text);
   });
 }
 
