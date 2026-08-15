@@ -62,9 +62,7 @@ function shortenArrowEnd(from,to,distance=7){
   return{x:to.x-dx/length*distance,y:to.y-dy/length*distance};
 }
 function curvedArrowPath(from,to){
-  const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1,nx=-dy/length,ny=dx/length;
-  const curve=Math.min(105,length*.24),c1={x:from.x+dx*.34+nx*curve,y:from.y+dy*.34+ny*curve},c2={x:from.x+dx*.7+nx*curve,y:from.y+dy*.7+ny*curve};
-  return`M ${from.x} ${from.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${to.x} ${to.y}`;
+  return`M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
 function renderArrows(){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('arrows-layer');
