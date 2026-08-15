@@ -289,6 +289,11 @@ function moveCaretByVisibleRow(sphere,caret,direction){
 
 function caretFromPoint(sphere,clientX,clientY){
   const visibleText=board.querySelector(`[data-id="${sphere.id}"] .sphere-text`);if(!visibleText||!sphere.text)return 0;
+  const nativeCaret=document.caretPositionFromPoint?.(clientX,clientY),nativeRange=nativeCaret?null:document.caretRangeFromPoint?.(clientX,clientY),node=nativeCaret?.offsetNode??nativeRange?.startContainer,offset=nativeCaret?.offset??nativeRange?.startOffset;
+  if(node&&visibleText.contains(node)){
+    const range=document.createRange();range.setStart(visibleText,0);range.setEnd(node,offset);
+    const position=range.toString().length;if(Number.isFinite(position))return Math.max(0,Math.min(sphere.text.length,position));
+  }
   const rect=visibleText.getBoundingClientRect(),style=getComputedStyle(visibleText),measure=document.createElement('div'),textNode=document.createTextNode(sphere.text);
   Object.assign(measure.style,{position:'fixed',left:`${rect.left}px`,top:`${rect.top}px`,width:`${visibleText.clientWidth}px`,height:'auto',padding:'0',margin:'0',visibility:'hidden',pointerEvents:'none',whiteSpace:'pre-wrap',overflowWrap:'anywhere',textAlign:style.textAlign,font:style.font,lineHeight:style.lineHeight,letterSpacing:style.letterSpacing});
   measure.append(textNode);document.body.append(measure);let best={index:0,distance:Infinity};

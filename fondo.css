@@ -20,11 +20,11 @@ html.restoring-view #board,html.restoring-view .bg-blob { visibility:hidden; }
 .sphere.connector-ready { cursor:crosshair; }
 .sphere.square { place-items:start; border-radius:18px; transition:padding .18s ease,transform .18s ease,box-shadow .18s ease; }
 .sphere.square .sphere-text { text-align:left; white-space:pre; overflow-wrap:normal; }
-.resize-handle { position:absolute; width:20px; height:20px; background:transparent; opacity:0; }
-.resize-handle.nw { left:-10px; top:-10px; cursor:nwse-resize; }
-.resize-handle.ne { right:-10px; top:-10px; cursor:nesw-resize; }
-.resize-handle.sw { left:-10px; bottom:-10px; cursor:nesw-resize; }
-.resize-handle.se { right:-10px; bottom:-10px; cursor:nwse-resize; }
+.resize-handle { position:absolute; width:max(10%,28px); height:max(10%,28px); background:transparent; opacity:0; }
+.resize-handle.nw { left:-4px; top:-4px; cursor:nwse-resize; }
+.resize-handle.ne { right:-4px; top:-4px; cursor:nesw-resize; }
+.resize-handle.sw { left:-4px; bottom:-4px; cursor:nesw-resize; }
+.resize-handle.se { right:-4px; bottom:-4px; cursor:nwse-resize; }
 .sphere.selected { border-color:rgba(15,23,42,.82); box-shadow:0 17px 38px rgba(51,65,85,.28),0 0 0 2px rgba(255,255,255,.9),inset -9px -12px 22px rgba(0,0,0,.1); transform:scale(1.025); }
 .sphere-text { width:100%; overflow:visible; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; font-size:var(--sphere-font-size, 17px); line-height:1.25; pointer-events:none; }
 .sphere-text sub,.sphere-text sup { font-size:.7em; line-height:0; }
