@@ -341,6 +341,7 @@ board.addEventListener('pointerdown',event=>{
   closeColorPalette();
   const el=event.target.closest('.sphere');
   if(!el){
+    categoryBar.hidden=true;
     lastSphereClick=null;
     marquee={id:event.pointerId,startX:event.clientX,startY:event.clientY+scrollY,element:document.createElement('div')};
     marquee.element.className='selection-box'; board.append(marquee.element); board.setPointerCapture(event.pointerId);
