@@ -2,6 +2,7 @@ const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='e
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
 let directoryHandle=null, saveTimer=null, selectedId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
+let copiedElement=null,elementPasteCount=0;
 const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
@@ -359,13 +360,24 @@ document.addEventListener('wheel',event=>{
 
 document.addEventListener('copy',event=>{
   const sphere=selected();if(!sphere)return;
-  const range=rangeFor(sphere),start=Math.min(range.anchor,range.focus),end=Math.max(range.anchor,range.focus);if(start===end)return;
-  event.clipboardData.setData('text/plain',sphere.text.slice(start,end));event.preventDefault();
+  const range=rangeFor(sphere),start=Math.min(range.anchor,range.focus),end=Math.max(range.anchor,range.focus);
+  if(start!==end){event.clipboardData.setData('text/plain',sphere.text.slice(start,end));copiedElement=null;event.preventDefault();return}
+  copiedElement=structuredClone(sphere);elementPasteCount=0;
+  event.clipboardData.setData('application/x-esferas-element',JSON.stringify(copiedElement));
+  event.clipboardData.setData('text/plain','');event.preventDefault();
 });
 
 document.addEventListener('paste',event=>{
   if(!notice.hidden)return;
-  const sphere=selected(),pastedText=event.clipboardData.getData('text/plain');
+  const encodedElement=event.clipboardData.getData('application/x-esferas-element'),clipboardText=event.clipboardData.getData('text/plain');
+  let elementToPaste=null;try{elementToPaste=encodedElement?JSON.parse(encodedElement):(!clipboardText?copiedElement:null)}catch{}
+  if(elementToPaste&&typeof elementToPaste==='object'&&typeof elementToPaste.text==='string'){
+    event.preventDefault();elementPasteCount++;
+    const offset=28*elementPasteCount,copy={...structuredClone(elementToPaste),id:crypto.randomUUID()};
+    copy.x=Math.max(0,Math.min(innerWidth-sphereWidth(copy),(elementToPaste.x??0)+offset));copy.y=Math.max(0,(elementToPaste.y??0)+offset);
+    state.spheres.push(copy);focusSphere(copy.id);setRange(copy,copy.text.length);render();scheduleSave();return;
+  }
+  const sphere=selected(),pastedText=clipboardText;
   if(!sphere||!pastedText)return;
   event.preventDefault();
   const range=rangeFor(sphere),start=Math.min(range.anchor,range.focus),end=Math.max(range.anchor,range.focus);
