@@ -183,7 +183,7 @@ function fitSquareToText(sphere,el,text){
   document.body.append(measure);
   const contentRange=document.createRange();contentRange.selectNodeContents(text);
   const renderedWidth=contentRange.getBoundingClientRect().width;
-  const naturalWidth=Math.ceil(Math.max(renderedWidth,text.scrollWidth,measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
+  const naturalWidth=Math.ceil(Math.max(renderedWidth,measure.scrollWidth,measure.getBoundingClientRect().width))+padding*2+8;measure.remove();
   const nextWidth=Math.max(sphereWidth(sphere),naturalWidth);
   if(nextWidth>sphereWidth(sphere)+.5){sphere.width=nextWidth;el.style.setProperty('--sphere-width',`${nextWidth}px`);changed=true}
   const neededHeight=text.scrollHeight+padding*2+12,nextHeight=Math.max(squareMinHeight(sphere),neededHeight);
@@ -214,7 +214,8 @@ function render(){
     if(sphere.shape==='square'){
       ['nw','ne','sw','se'].forEach(corner=>{const handle=document.createElement('span');handle.className=`resize-handle ${corner}`;handle.dataset.corner=corner;el.append(handle)});
     }
-    board.append(el);fitSquareToText(sphere,el,text);
+    board.append(el);
+    if(sphere.id===selectedId)fitSquareToText(sphere,el,text);
   });
 }
 
