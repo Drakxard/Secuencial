@@ -1,21 +1,29 @@
-const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', SIZE=168;
-const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError');
+const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
+const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
 let directoryHandle=null, saveTimer=null, selectedId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, marquee=null, backgroundHold=null, elementHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 const caretPositions=new Map();
 const selectionRanges=new Map();
-let state={color:randomColor(),spheres:[]}, pages=[state], currentPage=0, restoringScroll=false;
+let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
 
 function normalizeDocument(value){
-  const rawPages=Array.isArray(value?.pages)?value.pages:Array.isArray(value?.spheres)?[value]:[];
-  const validPages=rawPages.filter(page=>Array.isArray(page?.spheres)&&typeof page?.color==='string');
-  const normalizedPages=validPages.length?validPages:[{color:randomColor(),spheres:[]}];
-  return{pages:normalizedPages,updatedAt:value?.updatedAt??0};
+  const rawCategories=Array.isArray(value?.categories)?value.categories:[{name:'EO',pages:Array.isArray(value?.pages)?value.pages:Array.isArray(value?.spheres)?[value]:[]}];
+  const normalizedCategories=rawCategories.map((category,index)=>{
+    const validPages=(Array.isArray(category?.pages)?category.pages:[]).filter(page=>Array.isArray(page?.spheres)&&typeof page?.color==='string');
+    return{name:String(category?.name||`Categoría ${index+1}`),pages:validPages.length?validPages:[{color:randomColor(),spheres:[]}]};
+  });
+  return{categories:normalizedCategories.length?normalizedCategories:[{name:'EO',pages:[{color:randomColor(),spheres:[]}]}],updatedAt:value?.updatedAt??0};
 }
-function documentState(){return{pages,updatedAt:Math.max(0,...pages.map(page=>page.updatedAt??0))}}
-function savedPageIndex(){const value=Number(localStorage.getItem(PAGE_KEY));return Number.isInteger(value)&&value>=0?value:0}
+function documentState(){return{categories,updatedAt:Math.max(0,...categories.flatMap(category=>category.pages.map(page=>page.updatedAt??0)))}}
+function savedPageIndex(){
+  try{const value=JSON.parse(localStorage.getItem(PAGE_KEY));if(value&&typeof value==='object')return Number(value[currentCategory])||0}catch{}
+  const legacy=Number(localStorage.getItem(PAGE_KEY));return Number.isInteger(legacy)&&legacy>=0?legacy:0;
+}
+function savePageIndex(){let values={};try{values=JSON.parse(localStorage.getItem(PAGE_KEY))||{}}catch{}values[currentCategory]=currentPage;localStorage.setItem(PAGE_KEY,JSON.stringify(values))}
 function setDocument(value){
-  const normalized=normalizeDocument(value);pages=normalized.pages;
+  const normalized=normalizeDocument(value);categories=normalized.categories;
+  const savedCategory=Number(localStorage.getItem(CATEGORY_KEY));currentCategory=Number.isInteger(savedCategory)?Math.min(Math.max(0,savedCategory),categories.length-1):0;
+  pages=categories[currentCategory].pages;
   currentPage=Math.min(savedPageIndex(),pages.length-1);state=pages[currentPage];
   removeEmptyHiddenPages();
 }
@@ -281,6 +289,7 @@ document.addEventListener('keydown',event=>{
   }
   const growKey=event.key==='+'||event.key==='='||event.code==='NumpadAdd';
   const shrinkKey=event.key==='-'||event.code==='Minus'||event.code==='NumpadSubtract';
+  if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowUp'&&scrollY<=0){event.preventDefault();showCategoryBar();return}
   if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&(event.key==='ArrowRight'||event.key==='ArrowLeft')){
     event.preventDefault();switchPage(event.key==='ArrowRight'?1:-1);return;
   }
@@ -305,6 +314,7 @@ document.addEventListener('keyup',event=>{
 window.addEventListener('blur',()=>{altKeyHeld=false;finishAltNumericCode()});
 
 document.addEventListener('wheel',event=>{
+  if(notice.hidden&&!event.ctrlKey&&event.deltaY<0&&scrollY<=0){showCategoryBar();return}
   if(!notice.hidden||!event.ctrlKey||!selected())return;
   event.preventDefault();resizeSelection(event.deltaY<0);
 },{passive:false});
@@ -428,10 +438,11 @@ function scrollPositions(){
     const legacy=Number(localStorage.getItem('esferas-scroll-v1'));return Number.isFinite(legacy)?{0:legacy}:{};
   }catch{return{}}
 }
-function saveScroll(){const positions=scrollPositions();positions[currentPage]=scrollY;localStorage.setItem(SCROLL_KEY,JSON.stringify(positions))}
+function scrollKey(page=currentPage,category=currentCategory){return`${category}:${page}`}
+function saveScroll(){const positions=scrollPositions();positions[scrollKey()]=scrollY;localStorage.setItem(SCROLL_KEY,JSON.stringify(positions))}
 window.addEventListener('scroll',()=>{if(restoringScroll)return;clearTimeout(scrollTimer);scrollTimer=setTimeout(saveScroll,100)},{passive:true});
 function restoreScroll(){
-  const saved=Number(scrollPositions()[currentPage]??0);restoringScroll=true;
+  const positions=scrollPositions(),saved=Number(positions[scrollKey()]??(currentCategory===0?positions[currentPage]:0)??0);restoringScroll=true;
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     scrollTo(0,Number.isFinite(saved)?saved:0);restoringScroll=false;
     document.documentElement.classList.remove('restoring-view');
@@ -439,10 +450,12 @@ function restoreScroll(){
 }
 function replacePages(nextPages,activeState){
   const oldPages=pages,oldScrolls=scrollPositions(),nextScrolls={};
-  nextPages.forEach((page,index)=>{const previousIndex=oldPages.indexOf(page);if(previousIndex>=0&&oldScrolls[previousIndex]!==undefined)nextScrolls[index]=oldScrolls[previousIndex]});
+  Object.entries(oldScrolls).forEach(([key,value])=>{if(!key.startsWith(`${currentCategory}:`)&&!/^\d+$/.test(key))nextScrolls[key]=value});
+  nextPages.forEach((page,index)=>{const previousIndex=oldPages.indexOf(page),value=oldScrolls[scrollKey(previousIndex)]??(currentCategory===0?oldScrolls[previousIndex]:undefined);if(previousIndex>=0&&value!==undefined)nextScrolls[scrollKey(index)]=value});
   pages=nextPages.length?nextPages:[{color:randomColor(),spheres:[],updatedAt:Date.now()}];
+  categories[currentCategory].pages=pages;
   currentPage=Math.max(0,pages.indexOf(activeState));if(currentPage<0)currentPage=0;
-  state=pages[currentPage];localStorage.setItem(SCROLL_KEY,JSON.stringify(nextScrolls));localStorage.setItem(PAGE_KEY,String(currentPage));
+  state=pages[currentPage];localStorage.setItem(SCROLL_KEY,JSON.stringify(nextScrolls));savePageIndex();
 }
 function removeEmptyHiddenPages(){
   const remaining=pages.filter(page=>page===state||page.spheres.length);
@@ -458,15 +471,35 @@ function switchPage(direction){
   if(next>=pages.length&&!state.spheres.length)return;
   saveScroll();
   if(next>=pages.length)pages.push({color:randomColor(),spheres:[],updatedAt:Date.now()});
-  currentPage=next;state=pages[currentPage];localStorage.setItem(PAGE_KEY,String(currentPage));
+  currentPage=next;state=pages[currentPage];savePageIndex();
   removeEmptyHiddenPages();
   focusSphere(null);contracted=false;render();restoreScroll();scheduleSave();
 }
 
+function renderCategoryBar(){
+  categoryList.replaceChildren();
+  categories.forEach((category,index)=>{
+    const button=document.createElement('button');button.type='button';button.className=`category-button${index===currentCategory?' active':''}`;
+    button.textContent=category.name;button.addEventListener('click',()=>switchCategory(index));categoryList.append(button);
+  });
+}
+function showCategoryBar(){closeColorPalette();renderCategoryBar();categoryBar.hidden=false}
+function switchCategory(index){
+  if(index<0||index>=categories.length)return;
+  saveScroll();savePageIndex();currentCategory=index;localStorage.setItem(CATEGORY_KEY,String(currentCategory));
+  pages=categories[currentCategory].pages;currentPage=Math.min(savedPageIndex(),pages.length-1);state=pages[currentPage];
+  removeEmptyHiddenPages();focusSphere(null);contracted=false;categoryBar.hidden=true;render();restoreScroll();scheduleSave();
+}
+function createCategory(){
+  const suggested=`P${categories.length+1}`,name=prompt('Nombre de la nueva categoría:',suggested)?.trim();if(!name)return;
+  categories.push({name,pages:[{color:randomColor(),spheres:[],updatedAt:Date.now()}]});switchCategory(categories.length-1);
+}
+addCategory.addEventListener('click',createCategory);
+
 function saveBackup(){
   try{localStorage.setItem(BACKUP_KEY,JSON.stringify(documentState()))}catch(error){console.warn('No se pudo guardar el respaldo local.',error)}
 }
-function stateTextLength(value){return normalizeDocument(value).pages.reduce((total,page)=>total+page.spheres.reduce((sum,sphere)=>sum+(sphere.text?.length??0),0),0)}
+function stateTextLength(value){return normalizeDocument(value).categories.reduce((total,category)=>total+category.pages.reduce((pageTotal,page)=>pageTotal+page.spheres.reduce((sum,sphere)=>sum+(sphere.text?.length??0),0),0),0)}
 function shouldUseFolderState(folderState,backupState){
   if(!backupState)return true;
   const folderText=stateTextLength(folderState), backupText=stateTextLength(backupState);
@@ -474,7 +507,7 @@ function shouldUseFolderState(folderState,backupState){
   return (folderState.updatedAt??0)>=(backupState.updatedAt??0);
 }
 function restoreBackup(){
-  try{const stored=localStorage.getItem(BACKUP_KEY);if(!stored)return false;const loaded=JSON.parse(stored);if(!Array.isArray(loaded.pages)&&!Array.isArray(loaded.spheres))return false;setDocument(loaded);return true}
+  try{const stored=localStorage.getItem(BACKUP_KEY);if(!stored)return false;const loaded=JSON.parse(stored);if(!Array.isArray(loaded.categories)&&!Array.isArray(loaded.pages)&&!Array.isArray(loaded.spheres))return false;setDocument(loaded);return true}
   catch(error){console.warn('No se pudo recuperar el respaldo local.',error);return false}
 }
 function scheduleSave(){state.updatedAt=Date.now();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)}
@@ -485,7 +518,7 @@ async function saveState(){
 }
 async function loadState(){
   const backupState=structuredClone(documentState());
-  try{const handle=await directoryHandle.getFileHandle(STATE_FILE),file=await handle.getFile(),loaded=JSON.parse(await file.text());if((Array.isArray(loaded.pages)||Array.isArray(loaded.spheres))&&shouldUseFolderState(loaded,backupState))setDocument(loaded)}
+  try{const handle=await directoryHandle.getFileHandle(STATE_FILE),file=await handle.getFile(),loaded=JSON.parse(await file.text());if((Array.isArray(loaded.categories)||Array.isArray(loaded.pages)||Array.isArray(loaded.spheres))&&shouldUseFolderState(loaded,backupState))setDocument(loaded)}
   catch(error){if(error.name!=='NotFoundError')console.warn('No se pudo leer la carpeta; se usará el respaldo local.',error);restoreBackup();}
   saveBackup();focusSphere(null);render();restoreScroll();
 }
