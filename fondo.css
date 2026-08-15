@@ -3,6 +3,7 @@
 html, body { width:100%; min-height:100%; margin:0; scrollbar-width:none; }
 html::-webkit-scrollbar,body::-webkit-scrollbar { display:none; }
 body { position:relative; overflow-x:hidden; overflow-y:auto; background:var(--bg); color:var(--ink); font-family:Inter,ui-rounded,system-ui,-apple-system,"Segoe UI",sans-serif; }
+html.restoring-view #board,html.restoring-view .bg-blob { visibility:hidden; }
 .bg-blob { position:fixed; border-radius:50%; filter:blur(90px); opacity:.6; pointer-events:none; }
 .blob-1 { width:400px; height:400px; top:-10%; left:-5%; background:linear-gradient(135deg,#fbcfe8,#f472b6); }
 .blob-2 { width:350px; height:350px; right:-5%; bottom:-5%; background:linear-gradient(135deg,#bae6fd,#38bdf8); }

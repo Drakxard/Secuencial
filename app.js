@@ -398,7 +398,10 @@ function saveScroll(){const positions=scrollPositions();positions[currentPage]=s
 window.addEventListener('scroll',()=>{if(restoringScroll)return;clearTimeout(scrollTimer);scrollTimer=setTimeout(saveScroll,100)},{passive:true});
 function restoreScroll(){
   const saved=Number(scrollPositions()[currentPage]??0);restoringScroll=true;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{scrollTo(0,Number.isFinite(saved)?saved:0);restoringScroll=false}));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    scrollTo(0,Number.isFinite(saved)?saved:0);restoringScroll=false;
+    document.documentElement.classList.remove('restoring-view');
+  }));
 }
 function switchPage(direction){
   const next=currentPage+direction;if(next<0)return;
@@ -446,7 +449,7 @@ choose.addEventListener('click',async()=>{
 
 async function init(){
   restoreBackup();
-  if(!('showDirectoryPicker'in window)){notice.hidden=false;choose.disabled=true;errorText.textContent='Este navegador no admite acceso local a carpetas. Usa Chrome o Edge.';return}
+  if(!('showDirectoryPicker'in window)){notice.hidden=false;choose.disabled=true;errorText.textContent='Este navegador no admite acceso local a carpetas. Usa Chrome o Edge.';document.documentElement.classList.remove('restoring-view');return}
   try{const stored=await recoverHandle();if(stored&&await stored.queryPermission({mode:'readwrite'})==='granted'){directoryHandle=stored;await loadState();if(!state.spheres.length)addSphere(false);return}}catch(error){console.error(error)}
   notice.hidden=false;render();restoreScroll();
 }
