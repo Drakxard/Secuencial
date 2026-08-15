@@ -400,6 +400,7 @@ document.addEventListener('keydown',event=>{
   const growKey=event.key==='+'||event.key==='='||event.code==='NumpadAdd';
   const shrinkKey=event.key==='-'||event.code==='Minus'||event.code==='NumpadSubtract';
   if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowUp'&&scrollY<=0){event.preventDefault();showCategoryBar();return}
+  if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowDown'&&!categoryBar.hidden){event.preventDefault();categoryBar.hidden=true;return}
   if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&(event.key==='ArrowRight'||event.key==='ArrowLeft')){
     event.preventDefault();switchPage(event.key==='ArrowRight'?1:-1);return;
   }
@@ -424,6 +425,7 @@ window.addEventListener('blur',()=>{altKeyHeld=false;finishAltNumericCode()});
 
 document.addEventListener('wheel',event=>{
   if(notice.hidden&&!event.ctrlKey&&event.deltaY<0&&scrollY<=0){showCategoryBar();return}
+  if(notice.hidden&&!event.ctrlKey&&event.deltaY>0&&!categoryBar.hidden){categoryBar.hidden=true;return}
   if(!notice.hidden||!event.ctrlKey||!selected())return;
   event.preventDefault();resizeSelection(event.deltaY<0);
 },{passive:false});
