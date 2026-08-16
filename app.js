@@ -270,7 +270,7 @@ function render(){
   renderArrows();
   images().forEach((image,index)=>{
     const frame=document.createElement('figure'),content=document.createElement('img');
-    frame.className=`board-image${selectedImageIds.has(image.id)?' selected':''}`;frame.dataset.imageId=image.id;
+    frame.className=`board-image${selectedImageIds.has(image.id)?' selected':''}${image.id===selectedImageId&&selectedImageIds.size===1?' resizable':''}`;frame.dataset.imageId=image.id;
     Object.assign(frame.style,{left:`${image.x}px`,top:`${image.y}px`,width:`${image.width}px`,height:`${image.height}px`,zIndex:selectedImageIds.has(image.id)?state.spheres.length+images().length+4:index+1});
     content.src=image.src;content.alt=image.name||'Imagen pegada';content.draggable=false;frame.append(content);
     ['nw','n','ne','e','se','s','sw','w'].forEach(direction=>{const handle=document.createElement('span');handle.className=`image-handle ${direction}`;handle.setAttribute('aria-hidden','true');frame.append(handle)});
@@ -618,7 +618,7 @@ board.addEventListener('pointerdown',event=>{
   const imageEl=event.target.closest('.board-image');
   if(imageEl){
     const image=images().find(item=>item.id===imageEl.dataset.imageId);if(!image)return;
-    lastSphereClick=null;const direction=imageResizeDirection(imageEl,event);
+    lastSphereClick=null;const direction=image.id===selectedImageId&&selectedImageIds.size===1?imageResizeDirection(imageEl,event):'';
     if(direction){focusImage(image.id);imageResizeDrag={id:event.pointerId,image,direction,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y,width:image.width,height:image.height}}
     else{
       if(!selectedImageIds.has(image.id))focusImage(image.id);
@@ -701,7 +701,7 @@ board.addEventListener('pointermove',event=>{
   }
   if(!drag&&!imageDrag&&!imageResizeDrag&&!arrowDrag&&!connectorDrag){
     const hoveredImage=document.elementFromPoint(event.clientX,event.clientY)?.closest('.board-image');
-    if(hoveredImage){const direction=imageResizeDirection(hoveredImage,event);hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
+    if(hoveredImage){const canResize=hoveredImage.dataset.imageId===selectedImageId&&selectedImageIds.size===1,direction=canResize?imageResizeDirection(hoveredImage,event):'';hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
     const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
     board.querySelectorAll('.sphere.connector-ready').forEach(item=>item.classList.remove('connector-ready'));
     if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
