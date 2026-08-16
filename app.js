@@ -34,11 +34,16 @@ function restoreHistory(direction){
   currentPage=Math.min(snapshot.currentPage,pages.length-1);state=pages[currentPage];
   focusSphere(null);contracted=false;render();savePageIndex();localStorage.setItem(CATEGORY_KEY,String(currentCategory));saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220);restoringHistory=false;return true;
 }
-function savedPageIndex(){
-  try{const value=JSON.parse(localStorage.getItem(PAGE_KEY));if(value&&typeof value==='object')return Number(value[currentCategory])||0}catch{}
-  const legacy=Number(localStorage.getItem(PAGE_KEY));return Number.isInteger(legacy)&&legacy>=0?legacy:0;
+function savedPageIndexes(){
+  try{
+    const value=JSON.parse(localStorage.getItem(PAGE_KEY));
+    if(value&&typeof value==='object'&&!Array.isArray(value))return value;
+    if(Number.isInteger(value)&&value>=0)return{0:value};
+  }catch{}
+  return{};
 }
-function savePageIndex(){let values={};try{values=JSON.parse(localStorage.getItem(PAGE_KEY))||{}}catch{}values[currentCategory]=currentPage;localStorage.setItem(PAGE_KEY,JSON.stringify(values))}
+function savedPageIndex(){const value=Number(savedPageIndexes()[currentCategory]);return Number.isInteger(value)&&value>=0?value:0}
+function savePageIndex(){const values=savedPageIndexes();values[currentCategory]=currentPage;localStorage.setItem(PAGE_KEY,JSON.stringify(values))}
 function setDocument(value){
   const normalized=normalizeDocument(value);categories=normalized.categories;
   const savedCategory=Number(localStorage.getItem(CATEGORY_KEY));currentCategory=Number.isInteger(savedCategory)?Math.min(Math.max(0,savedCategory),categories.length-1):0;
@@ -114,22 +119,60 @@ function updateRenderedArrows(){
 }
 
 function openPosition(size){
-  const margin=18,maxX=Math.max(margin,innerWidth-size-margin),minY=scrollY+margin,maxY=Math.max(minY,scrollY+innerHeight-size-margin),candidates=[];
-  for(let y=minY;y<=maxY;y+=28)for(let x=margin;x<=maxX;x+=28)candidates.push({x,y});
-  candidates.push({x:maxX,y:maxY},{x:margin,y:maxY},{x:maxX,y:minY});
-  const scored=candidates.map(candidate=>{
-    const cx=candidate.x+size/2,cy=candidate.y+size/2;
-    const distanceToMouse=Math.hypot(cx-mouse.x,cy-mouse.y),mouseGap=distanceToMouse-size/2-20;
-    let sphereGap=Infinity,overlap=0;
-    state.spheres.forEach(item=>{
-      const itemWidth=sphereWidth(item),itemHeight=sphereHeight(item),ix=item.x+itemWidth/2,iy=item.y+itemHeight/2;
-      const gap=Math.hypot(cx-ix,cy-iy)-size/2-Math.hypot(itemWidth,itemHeight)/2-12;
-      sphereGap=Math.min(sphereGap,gap);if(gap<0)overlap+=-gap;
+  const margin=18,radius=size/2,cursorGap=20,elementGap=12;
+  const minX=margin,maxX=Math.max(minX,innerWidth-size-margin),minY=scrollY+margin;
+  const visibleMaxY=Math.max(minY,scrollY+innerHeight-size-margin),candidates=[],seen=new Set();
+  const addCandidate=(x,y)=>{
+    if(x<minX||x>maxX||y<minY)return;
+    const key=`${Math.round(x)},${Math.round(y)}`;if(seen.has(key))return;
+    seen.add(key);candidates.push({x,y});
+  };
+  const isFree=({x,y})=>{
+    const cx=x+radius,cy=y+radius;
+    if(Math.hypot(cx-mouse.x,cy-mouse.y)<radius+cursorGap)return false;
+    return state.spheres.every(item=>{
+      const width=sphereWidth(item),height=sphereHeight(item);
+      if(item.shape==='square'){
+        const nearestX=Math.max(item.x,Math.min(cx,item.x+width)),nearestY=Math.max(item.y,Math.min(cy,item.y+height));
+        return Math.hypot(cx-nearestX,cy-nearestY)>=radius+elementGap;
+      }
+      const itemRadius=Math.max(width,height)/2,itemX=item.x+width/2,itemY=item.y+height/2;
+      return Math.hypot(cx-itemX,cy-itemY)>=radius+itemRadius+elementGap;
     });
-    const free=mouseGap>=0&&sphereGap>=0;
-    return{...candidate,free,score:free?-distanceToMouse:-(overlap+Math.max(0,-mouseGap)*2+distanceToMouse*.01)};
-  });
-  return scored.sort((a,b)=>Number(b.free)-Number(a.free)||b.score-a.score)[0]??{x:margin,y:margin};
+  };
+
+  // Primero intenta ponerlo realmente a la par del clic; derecha e izquierda
+  // tienen prioridad para que los elementos queden alineados naturalmente.
+  addCandidate(mouse.x+cursorGap,mouse.y-radius);
+  addCandidate(mouse.x-size-cursorGap,mouse.y-radius);
+  addCandidate(mouse.x-radius,mouse.y+cursorGap);
+  addCandidate(mouse.x-radius,mouse.y-size-cursorGap);
+  for(const candidate of candidates)if(isFree(candidate))return candidate;
+
+  // Si esos cuatro lugares están ocupados, busca desde el cursor hacia afuera.
+  // La grilla está anclada al clic, no a la página, para no saltar a una punta.
+  const step=18,maxDistance=Math.hypot(innerWidth,innerHeight*2);
+  for(let ring=1;ring*step<=maxDistance;ring++){
+    const offset=ring*step;
+    for(let n=-ring;n<=ring;n++){
+      const cross=n*step;
+      addCandidate(mouse.x+offset-radius,mouse.y+cross-radius);
+      addCandidate(mouse.x-offset-radius,mouse.y+cross-radius);
+      if(Math.abs(n)<ring){
+        addCandidate(mouse.x+cross-radius,mouse.y+offset-radius);
+        addCandidate(mouse.x+cross-radius,mouse.y-offset-radius);
+      }
+    }
+    const ringCandidates=candidates.splice(0);
+    ringCandidates.sort((a,b)=>Math.hypot(a.x+radius-mouse.x,a.y+radius-mouse.y)-Math.hypot(b.x+radius-mouse.x,b.y+radius-mouse.y));
+    for(const candidate of ringCandidates)if(isFree(candidate))return candidate;
+    if(mouse.y+offset-radius>visibleMaxY&&offset>innerHeight)break;
+  }
+  // En una página excepcionalmente llena, continúa cerca de la misma columna
+  // hacia abajo hasta encontrar un lugar válido, sin superponer por fuerza.
+  const fallback={x:Math.max(minX,Math.min(maxX,mouse.x+cursorGap)),y:Math.max(minY,mouse.y+cursorGap)};
+  while(!isFree(fallback))fallback.y+=size+elementGap;
+  return fallback;
 }
 
 function closingBrace(source,open){
