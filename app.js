@@ -1,6 +1,6 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
-let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), contracted=false, drag=null, resizeDrag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let mouse={x:innerWidth/2,y:innerHeight/2};
 let copiedElement=null,elementPasteCount=0;
 let history=[],historyIndex=-1,restoringHistory=false;
@@ -62,8 +62,8 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id){selectedArrowId=null;selectedImageId=null;selectedId=id;editingId=id;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
-function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id}
+function focusSphere(id){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=id;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
+function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
@@ -270,8 +270,8 @@ function render(){
   renderArrows();
   images().forEach((image,index)=>{
     const frame=document.createElement('figure'),content=document.createElement('img');
-    frame.className=`board-image${image.id===selectedImageId?' selected':''}`;frame.dataset.imageId=image.id;
-    Object.assign(frame.style,{left:`${image.x}px`,top:`${image.y}px`,width:`${image.width}px`,height:`${image.height}px`,zIndex:image.id===selectedImageId?state.spheres.length+images().length+4:index+1});
+    frame.className=`board-image${selectedImageIds.has(image.id)?' selected':''}`;frame.dataset.imageId=image.id;
+    Object.assign(frame.style,{left:`${image.x}px`,top:`${image.y}px`,width:`${image.width}px`,height:`${image.height}px`,zIndex:selectedImageIds.has(image.id)?state.spheres.length+images().length+4:index+1});
     content.src=image.src;content.alt=image.name||'Imagen pegada';content.draggable=false;frame.append(content);
     ['nw','n','ne','e','se','s','sw','w'].forEach(direction=>{const handle=document.createElement('span');handle.className=`image-handle ${direction}`;handle.setAttribute('aria-hidden','true');frame.append(handle)});
     board.append(frame);
@@ -292,9 +292,6 @@ function render(){
       if(!sphere.text){const placeholder=document.createElement('span');placeholder.className='text-placeholder';placeholder.textContent='Escribe…';text.append(placeholder)}
     }else{if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);else{text.textContent='Escribe…';text.style.opacity='.48'}}
     el.append(text);
-    if(sphere.shape==='square'){
-      ['nw','ne','sw','se'].forEach(corner=>{const handle=document.createElement('span');handle.className=`resize-handle ${corner}`;handle.dataset.corner=corner;el.append(handle)});
-    }
     board.append(el);
     fitSquareToText(sphere,el,text);
   });
@@ -318,6 +315,60 @@ async function pasteImage(file,targetState,point){
   }catch(error){console.error('No se pudo pegar la imagen.',error)}
 }
 
+function escapeXml(value){return String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[character]))}
+function svgNumber(value){return Math.round(Number(value)*100)/100}
+function exportTextHtml(sphere){
+  const text=document.createElement('div');text.setAttribute('xmlns','http://www.w3.org/1999/xhtml');text.className=`export-text ${sphere.shape==='square'?'square':'circle'}`;
+  text.style.fontSize=`${svgNumber(17*(sphere.fontScale??1))}px`;text.style.color=textColor();
+  if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);
+  return new XMLSerializer().serializeToString(text);
+}
+function exportShape(sphere){
+  const x=svgNumber(sphere.x),y=svgNumber(sphere.y),width=svgNumber(sphereWidth(sphere)),height=svgNumber(sphereHeight(sphere)),padding=svgNumber(spherePadding(sphere)),shape=sphere.shape==='square'
+    ?`<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="18" ry="18"`:`<ellipse cx="${svgNumber(sphere.x+sphereWidth(sphere)/2)}" cy="${svgNumber(sphere.y+sphereHeight(sphere)/2)}" rx="${svgNumber(sphereWidth(sphere)/2)}" ry="${svgNumber(sphereHeight(sphere)/2)}"`;
+  const textX=svgNumber(sphere.x+padding),textY=svgNumber(sphere.y+padding),textWidth=Math.max(1,svgNumber(sphereWidth(sphere)-padding*2)),textHeight=Math.max(1,svgNumber(sphereHeight(sphere)-padding*2));
+  return `<g filter="url(#sphere-shadow)">${shape} fill="${escapeXml(state.color)}"/>${shape} fill="url(#sphere-shade)"/></g><foreignObject x="${textX}" y="${textY}" width="${textWidth}" height="${textHeight}">${exportTextHtml(sphere)}</foreignObject>`;
+}
+function exportArrow(arrow){
+  const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),path=curvedArrowPath(from,to);
+  return `<path d="${escapeXml(path)}" fill="none" stroke="${escapeXml(state.arrowColor??'#202020')}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#export-arrow-tip)"/>`;
+}
+function exportImage(image){return `<image x="${svgNumber(image.x)}" y="${svgNumber(image.y)}" width="${svgNumber(image.width)}" height="${svgNumber(image.height)}" href="${escapeXml(image.src)}" preserveAspectRatio="none"/>`}
+function buildExportSvg(){
+  const width=Math.max(1,Math.round(innerWidth)),height=Math.max(1,Math.round(canvasHeight())),arrowColor=escapeXml(state.arrowColor??'#202020');
+  const arrowMarkup=arrows().map(exportArrow).join(''),contentMarkup=[...images().map((image,index)=>({z:index+1,order:0,markup:exportImage(image)})),...state.spheres.map((sphere,index)=>({z:index+1,order:1,markup:exportShape(sphere)}))].sort((a,b)=>a.z-b.z||a.order-b.order).map(item=>item.markup).join('');
+  const svg=`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <linearGradient id="blob-pink" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fbcfe8"/><stop offset="1" stop-color="#f472b6"/></linearGradient>
+    <linearGradient id="blob-blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#bae6fd"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+    <linearGradient id="blob-violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ddd6fe"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <radialGradient id="sphere-shade" cx="65%" cy="72%" r="62%"><stop stop-color="#000" stop-opacity=".16"/><stop offset=".54" stop-color="#000" stop-opacity="0"/></radialGradient>
+    <filter id="background-blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="90"/></filter>
+    <filter id="sphere-shadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="17" stdDeviation="17" flood-color="#334155" flood-opacity=".2"/></filter>
+    <marker id="export-arrow-tip" viewBox="0 0 14 14" refX="11.5" refY="7" markerWidth="2.7" markerHeight="2.7" orient="auto"><path d="M 2 2 L 12 7 L 2 12" fill="none" stroke="${arrowColor}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <style><![CDATA[
+      .export-text{box-sizing:border-box;width:100%;height:100%;margin:0;display:flex;align-items:center;justify-content:center;font-family:Inter,ui-rounded,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.25;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}
+      .export-text.square{display:block;text-align:left;white-space:pre;overflow-wrap:normal}
+      .export-text sub,.export-text sup{font-size:.7em;line-height:0}.export-text sub{vertical-align:-.35em}.export-text sup{vertical-align:.55em}
+      .math-fraction{display:inline-flex;flex-direction:column;align-items:stretch;margin:0 .16em;vertical-align:middle;line-height:1.05;text-align:center}.fraction-top{padding:0 .16em .08em;border-bottom:1.5px solid currentColor}.fraction-bottom{padding:.08em .16em 0}
+    ]]></style>
+  </defs>
+  <rect width="${width}" height="${height}" fill="#f8fafc"/>
+  <g filter="url(#background-blur)" opacity=".6">
+    <ellipse cx="${svgNumber(width*.07)}" cy="${svgNumber(height*.08)}" rx="${svgNumber(Math.max(200,width*.16))}" ry="${svgNumber(Math.max(200,height*.07))}" fill="url(#blob-pink)"/>
+    <ellipse cx="${svgNumber(width*.94)}" cy="${svgNumber(height*.91)}" rx="${svgNumber(Math.max(175,width*.14))}" ry="${svgNumber(Math.max(175,height*.065))}" fill="url(#blob-blue)"/>
+    <ellipse cx="${svgNumber(width*.78)}" cy="${svgNumber(height*.48)}" rx="${svgNumber(Math.max(150,width*.12))}" ry="${svgNumber(Math.max(150,height*.055))}" fill="url(#blob-violet)"/>
+  </g>
+  ${arrowMarkup}${contentMarkup}
+</svg>`;
+  return svg;
+}
+function exportSvg(){
+  const svg=buildExportSvg(),safeCategory=(categories[currentCategory]?.name||`categoria-${currentCategory+1}`).trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'-').replace(/\s+/g,'-')||`categoria-${currentCategory+1}`,blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=`${safeCategory}-pagina-${currentPage+1}.svg`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function addSphere(selectSphere=true){
   contracted=false;
   const place=openPosition(SIZE);
@@ -330,7 +381,7 @@ function addSphere(selectSphere=true){
 function isConnectorBorder(sphere,event,el){
   const rect=el.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,w=rect.width,h=rect.height;
   if(sphere.shape!=='square'){const radius=Math.hypot((x-w/2)/(w/2),(y-h/2)/(h/2));return radius>=.8&&radius<=1.08}
-  const near=x<w*.1||x>w*.9||y<h*.1||y>h*.9,corner=(x<w*.14||x>w*.86)&&(y<h*.14||y>h*.86);return near&&!corner;
+  return x<w*.1||x>w*.9||y<h*.1||y>h*.9;
 }
 
 function closeColorPalette(){colorPalette?.restorePreview?.();colorPalette?.remove();colorPalette=null}
@@ -485,11 +536,11 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
+  if(event.key==='|'&&!editingId){event.preventDefault();exportSvg();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='y'){if(restoreHistory(1))event.preventDefault();return}
   if(selectedArrowId&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();state.arrows=arrows().filter(arrow=>arrow.id!==selectedArrowId);selectedArrowId=null;render();scheduleSave();return}
-  if(selectedImageId&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();state.images=images().filter(image=>image.id!==selectedImageId);selectedImageId=null;render();scheduleSave();return}
-  if(!editingId&&selectedIds.size&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();[...selectedIds].forEach(removeSphere);selectedId=null;render();scheduleSave();return}
+  if(!editingId&&(selectedIds.size||selectedImageIds.size)&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();[...selectedIds].forEach(removeSphere);state.images=images().filter(image=>!selectedImageIds.has(image.id));selectedId=null;selectedImageId=null;selectedImageIds=new Set();render();scheduleSave();return}
   if(event.key==='Alt'||event.code==='AltLeft'||event.code==='AltRight'){
     altKeyHeld=true;event.preventDefault();return;
   }
@@ -500,9 +551,9 @@ document.addEventListener('keydown',event=>{
   }
   const growKey=event.key==='+'||event.key==='='||event.code==='NumpadAdd';
   const shrinkKey=event.key==='-'||event.code==='Minus'||event.code==='NumpadSubtract';
-  if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowUp'&&scrollY<=0){event.preventDefault();showCategoryBar();return}
-  if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowDown'&&!categoryBar.hidden){event.preventDefault();categoryBar.hidden=true;return}
-  if(!selected()&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&(event.key==='ArrowRight'||event.key==='ArrowLeft')){
+  if(!selected()&&!selectedImageIds.size&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowUp'&&scrollY<=0){event.preventDefault();showCategoryBar();return}
+  if(!selected()&&!selectedImageIds.size&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key==='ArrowDown'&&!categoryBar.hidden){event.preventDefault();categoryBar.hidden=true;return}
+  if(!selected()&&!selectedImageIds.size&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&(event.key==='ArrowRight'||event.key==='ArrowLeft')){
     event.preventDefault();switchPage(event.key==='ArrowRight'?1:-1);return;
   }
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){
@@ -567,9 +618,13 @@ board.addEventListener('pointerdown',event=>{
   const imageEl=event.target.closest('.board-image');
   if(imageEl){
     const image=images().find(item=>item.id===imageEl.dataset.imageId);if(!image)return;
-    focusImage(image.id);lastSphereClick=null;const direction=imageResizeDirection(imageEl,event);
-    if(direction)imageResizeDrag={id:event.pointerId,image,direction,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y,width:image.width,height:image.height};
-    else imageDrag={id:event.pointerId,image,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y};
+    lastSphereClick=null;const direction=imageResizeDirection(imageEl,event);
+    if(direction){focusImage(image.id);imageResizeDrag={id:event.pointerId,image,direction,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y,width:image.width,height:image.height}}
+    else{
+      if(!selectedImageIds.has(image.id))focusImage(image.id);
+      const imageItems=images().filter(item=>selectedImageIds.has(item.id)).map(item=>({image:item,x:item.x,y:item.y})),sphereItems=state.spheres.filter(sphere=>selectedIds.has(sphere.id)).map(sphere=>({sphere,x:sphere.x,y:sphere.y}));
+      imageDrag={id:event.pointerId,startX:event.clientX,startY:event.clientY,imageItems,sphereItems};
+    }
     event.preventDefault();render();const active=board.querySelector(`[data-image-id="${image.id}"]`);active.setPointerCapture(event.pointerId);active.classList.add('dragging');return;
   }
   const arrowEl=event.target.closest('.arrow-item');
@@ -595,13 +650,6 @@ board.addEventListener('pointerdown',event=>{
     },700)};
     updateMarquee(event.clientX,event.clientY+scrollY); return;
   }
-  const handle=event.target.closest('.resize-handle');
-  if(handle){
-    const sphere=state.spheres.find(item=>item.id===el.dataset.id);if(!sphere)return;
-    selectedId=sphere.id;editingId=null;selectedIds=new Set([sphere.id]);lastSphereClick=null;
-    resizeDrag={id:event.pointerId,sphere,corner:handle.dataset.corner,startX:event.clientX,startY:event.clientY,x:sphere.x,y:sphere.y,width:sphereWidth(sphere),height:sphereHeight(sphere)};
-    el.setPointerCapture(event.pointerId);event.preventDefault();return;
-  }
   const borderSphere=state.spheres.find(item=>item.id===el.dataset.id);
   if(borderSphere&&isConnectorBorder(borderSphere,event,el)){
     const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);focusSphere(null);
@@ -625,8 +673,8 @@ board.addEventListener('pointerdown',event=>{
     elementHold=null;drag=null;lastSphereClick=null;el.classList.remove('dragging');openColorPalette(clickedSphere);
   },700)};
   contracted=false;
-  const movingSpheres=state.spheres.filter(sphere=>selectedIds.has(sphere.id));
-  drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y}))};render();
+  const movingSpheres=state.spheres.filter(sphere=>selectedIds.has(sphere.id)),movingImages=images().filter(image=>selectedImageIds.has(image.id));
+  drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y})),imageItems:movingImages.map(image=>({image,x:image.x,y:image.y}))};render();
   const active=board.querySelector(`[data-id="${selectedId}"]`); active.setPointerCapture(event.pointerId); active.classList.add('dragging');
 });
 board.addEventListener('dblclick',event=>{
@@ -645,9 +693,13 @@ board.addEventListener('pointermove',event=>{
     Object.assign(item.image,{x:left,y:top,width:right-left,height:bottom-top});const active=board.querySelector(`[data-image-id="${item.image.id}"]`);Object.assign(active.style,{left:`${left}px`,top:`${top}px`,width:`${right-left}px`,height:`${bottom-top}px`});board.style.height=`${canvasHeight()}px`;return;
   }
   if(imageDrag&&event.pointerId===imageDrag.id){
-    const item=imageDrag;item.image.x=Math.max(0,Math.min(innerWidth-item.image.width,item.x+event.clientX-item.startX));item.image.y=Math.max(0,item.y+event.clientY-item.startY);const active=board.querySelector(`[data-image-id="${item.image.id}"]`);active.style.left=`${item.image.x}px`;active.style.top=`${item.image.y}px`;board.style.height=`${canvasHeight()}px`;return;
+    let dx=event.clientX-imageDrag.startX,dy=event.clientY-imageDrag.startY;
+    const horizontal=[...imageDrag.imageItems.map(item=>({x:item.x,width:item.image.width})),...imageDrag.sphereItems.map(item=>({x:item.x,width:sphereWidth(item.sphere)}))],vertical=[...imageDrag.imageItems.map(item=>({y:item.y,height:item.image.height})),...imageDrag.sphereItems.map(item=>({y:item.y,height:sphereHeight(item.sphere)}))];
+    dx=Math.max(Math.max(...horizontal.map(item=>-item.x)),Math.min(Math.min(...horizontal.map(item=>innerWidth-item.width-item.x)),dx));dy=Math.max(Math.max(...vertical.map(item=>-item.y)),dy);
+    imageDrag.imageItems.forEach(item=>{item.image.x=item.x+dx;item.image.y=item.y+dy;const active=board.querySelector(`[data-image-id="${item.image.id}"]`);active.style.left=`${item.image.x}px`;active.style.top=`${item.image.y}px`});
+    imageDrag.sphereItems.forEach(item=>{item.sphere.x=item.x+dx;item.sphere.y=item.y+dy;const active=board.querySelector(`[data-id="${item.sphere.id}"]`);active.style.left=`${item.sphere.x}px`;active.style.top=`${item.sphere.y}px`});board.style.height=`${canvasHeight()}px`;updateRenderedArrows();return;
   }
-  if(!drag&&!resizeDrag&&!imageDrag&&!imageResizeDrag&&!arrowDrag&&!connectorDrag){
+  if(!drag&&!imageDrag&&!imageResizeDrag&&!arrowDrag&&!connectorDrag){
     const hoveredImage=document.elementFromPoint(event.clientX,event.clientY)?.closest('.board-image');
     if(hoveredImage){const direction=imageResizeDirection(hoveredImage,event);hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
     const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
@@ -670,27 +722,18 @@ board.addEventListener('pointermove',event=>{
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
-  if(resizeDrag&&event.pointerId===resizeDrag.id){
-    const item=resizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,minWidth=90,minHeight=squareMinHeight(item.sphere);
-    let left=item.x,right=item.x+item.width,top=item.y,bottom=item.y+item.height;
-    if(item.corner.includes('e'))right=Math.min(innerWidth,Math.max(left+minWidth,right+dx));
-    if(item.corner.includes('w'))left=Math.max(0,Math.min(right-minWidth,left+dx));
-    if(item.corner.includes('s'))bottom=Math.max(top+minHeight,bottom+dy);
-    if(item.corner.includes('n'))top=Math.max(0,Math.min(bottom-minHeight,top+dy));
-    Object.assign(item.sphere,{x:left,y:top,width:right-left,height:bottom-top});
-    const active=board.querySelector(`[data-id="${item.sphere.id}"]`);
-    Object.assign(active.style,{left:`${left}px`,top:`${top}px`});active.style.setProperty('--sphere-width',`${right-left}px`);active.style.setProperty('--sphere-height',`${bottom-top}px`);updateRenderedArrows();return;
-  }
   if(!drag||event.pointerId!==drag.id)return;
   if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>=7)lastSphereClick=null;
   let dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;
-  const minDx=Math.max(...drag.items.map(item=>-item.x)),maxDx=Math.min(...drag.items.map(item=>innerWidth-sphereWidth(item.sphere)-item.x));
-  const minDy=Math.max(...drag.items.map(item=>-item.y)),maxDy=Math.min(...drag.items.map(item=>canvasHeight()-sphereHeight(item.sphere)-item.y));
+  const horizontal=[...drag.items.map(item=>({x:item.x,width:sphereWidth(item.sphere)})),...drag.imageItems.map(item=>({x:item.x,width:item.image.width}))],vertical=[...drag.items.map(item=>({y:item.y,height:sphereHeight(item.sphere)})),...drag.imageItems.map(item=>({y:item.y,height:item.image.height}))];
+  const minDx=Math.max(...horizontal.map(item=>-item.x)),maxDx=Math.min(...horizontal.map(item=>innerWidth-item.width-item.x));
+  const minDy=Math.max(...vertical.map(item=>-item.y)),maxDy=Math.min(...vertical.map(item=>canvasHeight()-item.height-item.y));
   dx=Math.max(minDx,Math.min(maxDx,dx));dy=Math.max(minDy,Math.min(maxDy,dy));
   drag.items.forEach(item=>{
     item.sphere.x=item.x+dx;item.sphere.y=item.y+dy;
     const el=board.querySelector(`[data-id="${item.sphere.id}"]`);el.style.left=`${item.sphere.x}px`;el.style.top=`${item.sphere.y}px`;
   });
+  drag.imageItems.forEach(item=>{item.image.x=item.x+dx;item.image.y=item.y+dy;const el=board.querySelector(`[data-image-id="${item.image.id}"]`);el.style.left=`${item.image.x}px`;el.style.top=`${item.image.y}px`});
   updateRenderedArrows();
 });
 function updateMarquee(x,y){
@@ -700,9 +743,11 @@ function updateMarquee(x,y){
     const p=position(state.spheres.indexOf(s),s),itemWidth=sphereWidth(s),itemHeight=sphereHeight(s);
     return p.x<left+width&&p.x+itemWidth>left&&p.y<top+height&&p.y+itemHeight>top;
   }).map(s=>s.id));
-  editingId=null;selectedId=[...selectedIds][0]??null;if(selectedId&&!caretPositions.has(selectedId))caretPositions.set(selectedId,selected()?.text.length??0);
+  selectedImageIds=new Set(images().filter(image=>image.x<left+width&&image.x+image.width>left&&image.y<top+height&&image.y+image.height>top).map(image=>image.id));
+  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;if(selectedId&&!caretPositions.has(selectedId))caretPositions.set(selectedId,selected()?.text.length??0);
   board.querySelectorAll('.sphere').forEach(el=>el.classList.toggle('selected',selectedIds.has(el.dataset.id)));
   board.querySelectorAll('.sphere').forEach(el=>el.classList.remove('focused'));
+  board.querySelectorAll('.board-image').forEach(el=>el.classList.toggle('selected',selectedImageIds.has(el.dataset.imageId)));
 }
 function endDrag(event){
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
@@ -717,7 +762,6 @@ function endDrag(event){
   if(imageResizeDrag&&event.pointerId===imageResizeDrag.id){imageResizeDrag=null;render();scheduleSave();return}
   if(imageDrag&&event.pointerId===imageDrag.id){imageDrag=null;render();scheduleSave();return}
   if(marquee&&event.pointerId===marquee.id){marquee.element.remove();marquee=null;render();return}
-  if(resizeDrag&&event.pointerId===resizeDrag.id){resizeDrag=null;scheduleSave();render();return}
   if(!drag||event.pointerId!==drag.id)return;drag=null;scheduleSave();render()
 }
 board.addEventListener('pointerup',endDrag); board.addEventListener('pointercancel',endDrag);
