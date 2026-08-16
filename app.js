@@ -132,6 +132,16 @@ function openPosition(size){
   return scored.sort((a,b)=>Number(b.free)-Number(a.free)||b.score-a.score)[0]??{x:margin,y:margin};
 }
 
+function closingBrace(source,open){
+  if(source[open]!=='{')return -1;
+  let depth=1;
+  for(let i=open+1;i<source.length;i++){
+    if(source[i]==='{')depth++;
+    else if(source[i]==='}'&&!--depth)return i;
+  }
+  return -1;
+}
+
 function appendMathText(parent,source,bullets=false,startsLine=true,showTrailingBullet=false){
   let plain='';
   const symbols={alpha:'α',beta:'β',gamma:'γ',delta:'δ',theta:'θ',lambda:'λ',mu:'μ',pi:'π',sigma:'σ',phi:'φ',omega:'ω',Delta:'Δ',Sigma:'Σ',Omega:'Ω',infty:'∞',sum:'∑',int:'∫',sqrt:'√',times:'×',cdot:'·',neq:'≠',le:'≤',ge:'≥',approx:'≈'};
@@ -145,6 +155,20 @@ function appendMathText(parent,source,bullets=false,startsLine=true,showTrailing
     }
     const marker=source[i];
     if(marker==='\n'){plain+='\n';startsLine=true;continue}
+    if(marker==='{'){
+      const numeratorClose=closingBrace(source,i),slash=numeratorClose+1,denominatorOpen=slash+1;
+      if(numeratorClose>i+1&&source[slash]==='/'&&source[denominatorOpen]==='{'){
+        const denominatorClose=closingBrace(source,denominatorOpen);
+        if(denominatorClose>denominatorOpen+1){
+          flush();
+          const fraction=document.createElement('span'),top=document.createElement('span'),bottom=document.createElement('span');
+          fraction.className='math-fraction';top.className='fraction-top';bottom.className='fraction-bottom';
+          appendMathText(top,source.slice(i+1,numeratorClose));
+          appendMathText(bottom,source.slice(denominatorOpen+1,denominatorClose));
+          fraction.append(top,bottom);parent.append(fraction);i=denominatorClose;continue;
+        }
+      }
+    }
     if(marker==='/'){
       const numeratorMatch=plain.match(/\{([^{}]+)\}$/),close=source[i+1]==='{'?source.indexOf('}',i+2):-1;
       if(numeratorMatch&&close>i+2){
