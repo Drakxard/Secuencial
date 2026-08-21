@@ -46,6 +46,12 @@ jobs:
           SECUENCIAL_KEY_ALIAS: ${{ secrets.SECUENCIAL_KEY_ALIAS }}
           SECUENCIAL_KEY_PASSWORD: ${{ secrets.SECUENCIAL_KEY_PASSWORD }}
         run: ./gradlew lintRelease assembleRelease
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose android/app/build/outputs/apk/release/app-release.apk
       - name: Prepare artifact
         run: cp android/app/build/outputs/apk/release/app-release.apk Secuencial.apk
       - name: Publish GitHub Release
