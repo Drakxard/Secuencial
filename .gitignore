@@ -1,0 +1,13 @@
+node_modules/
+www/
+test-results/
+playwright-report/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/.idea/
+*.jks
+*.keystore
