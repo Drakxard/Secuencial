@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Esferas</title>
   <script>document.documentElement.classList.add('restoring-view');if('scrollRestoration'in history)history.scrollRestoration='manual'</script>
   <link rel="stylesheet" href="fondo.css">
@@ -12,6 +12,8 @@
   <div class="bg-blob blob-2" aria-hidden="true"></div>
   <div class="bg-blob blob-3" aria-hidden="true"></div>
   <main id="board" aria-label="Pizarra de esferas"></main>
+  <textarea id="mobileEditor" class="mobile-editor" aria-label="Editar texto" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
+  <button id="stopPaste" class="stop-paste" type="button" title="Desactivar pegado" aria-label="Desactivar pegado" hidden>Copiando <span aria-hidden="true">×</span></button>
   <nav id="categoryBar" class="category-bar" aria-label="Categorías" hidden>
     <div id="categoryList" class="category-list"></div>
     <button id="addCategory" class="add-category" type="button" title="Nueva categoría" aria-label="Nueva categoría">+</button>

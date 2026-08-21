@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Secuencial</string>
+    <string name="title_activity_main">Secuencial</string>
+    <string name="package_name">com.drakxard.secuencial</string>
+    <string name="custom_url_scheme">com.drakxard.secuencial</string>
+</resources>

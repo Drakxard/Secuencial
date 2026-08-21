@@ -1,0 +1,8 @@
+{
+  "appId": "com.drakxard.secuencial",
+  "appName": "Secuencial",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f8fafc"
+  }
+}

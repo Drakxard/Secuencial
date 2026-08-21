@@ -1,6 +1,9 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
-const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory');
+const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste');
+const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let touchBackground=null,pinch=null,lastBackgroundTap=null,mobileSphereTapCandidate=null;
+const touchPointers=new Map();
 let mouse={x:innerWidth/2,y:innerHeight/2};
 let copiedElement=null,elementPasteCount=0;
 let history=[],historyIndex=-1,restoringHistory=false;
@@ -62,7 +65,7 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=id;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
+function focusSphere(id,edit=!coarsePointer){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
 function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
@@ -292,9 +295,39 @@ function render(){
       if(!sphere.text){const placeholder=document.createElement('span');placeholder.className='text-placeholder';placeholder.textContent='Escribe…';text.append(placeholder)}
     }else{if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);else{text.textContent='Escribe…';text.style.opacity='.48'}}
     el.append(text);
+    if(coarsePointer&&selectedIds.size===1&&selectedIds.has(sphere.id)){
+      const tools=document.createElement('div'),shape=document.createElement('button'),copy=document.createElement('button');tools.className='sphere-tools';
+      shape.type='button';shape.className='sphere-tool';shape.title='Cambiar forma';shape.setAttribute('aria-label','Cambiar forma');shape.textContent=sphere.shape==='square'?'○':'□';
+      copy.type='button';copy.className='sphere-tool';copy.title='Copiar esfera';copy.setAttribute('aria-label','Copiar esfera');copy.textContent='⧉';
+      [shape,copy].forEach(button=>button.addEventListener('pointerdown',event=>event.stopPropagation()));
+      shape.addEventListener('click',()=>{sphere.shape=sphere.shape==='square'?'circle':'square';render();scheduleSave()});
+      copy.addEventListener('click',()=>{copiedElement=structuredClone(sphere);elementPasteCount=0;stopPaste.hidden=false});
+      tools.append(shape,copy);el.append(tools);
+    }
     board.append(el);
     fitSquareToText(sphere,el,text);
   });
+}
+
+function openMobileEditor(sphere,caret=sphere.text.length){
+  editingId=sphere.id;setRange(sphere,caret);mobileEditor.value=sphere.text;mobileEditor.focus({preventScroll:true});
+  mobileEditor.setSelectionRange(caret,caret);render();
+}
+function syncMobileEditor(){
+  const sphere=editableSelected();if(!sphere)return;
+  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);render();scheduleSave();
+}
+mobileEditor.addEventListener('input',syncMobileEditor);
+mobileEditor.addEventListener('select',()=>{const sphere=editableSelected();if(sphere){setRange(sphere,mobileEditor.selectionStart??0,mobileEditor.selectionEnd??0);render()}});
+stopPaste.addEventListener('pointerdown',event=>event.stopPropagation());
+stopPaste.addEventListener('click',()=>{copiedElement=null;elementPasteCount=0;stopPaste.hidden=true});
+
+function pasteCopiedElementAt(point){
+  if(!copiedElement)return false;
+  elementPasteCount++;
+  const copy={...structuredClone(copiedElement),id:crypto.randomUUID()},width=sphereWidth(copy),height=sphereHeight(copy);
+  copy.x=Math.max(0,Math.min(innerWidth-width,point.x-width/2));copy.y=Math.max(0,point.y-height/2);
+  state.spheres.push(copy);focusSphere(copy.id,false);render();scheduleSave();return true;
 }
 
 function imageResizeDirection(frame,event){
@@ -413,6 +446,7 @@ function openColorPalette(sphere,forArrows=false){
 function type(event){
   const sphere=editableSelected(); if(!sphere||event.ctrlKey||event.metaKey||event.altKey)return false;
   if(!sphere.text&&event.key==='Backspace'){
+    if(coarsePointer)return true;
     removeSphere(sphere.id);render();scheduleSave();return true;
   }
   const range=rangeFor(sphere),start=Math.min(range.anchor,range.focus),end=Math.max(range.anchor,range.focus),hadSelection=start!==end;let caret=start;
@@ -612,7 +646,29 @@ document.addEventListener('paste',event=>{
   render();scheduleSave();
 });
 
+function beginPinch(){
+  if(touchPointers.size<2||!selectedIds.size)return false;
+  const points=[...touchPointers.values()].slice(0,2),distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);if(distance<12)return false;
+  const center={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2+scrollY};
+  const items=state.spheres.filter(sphere=>selectedIds.has(sphere.id)).map(sphere=>({sphere,x:sphere.x,y:sphere.y,scale:sphere.scale??1,width:sphereWidth(sphere),height:sphereHeight(sphere)}));if(!items.length)return false;
+  [backgroundHold,elementHold,arrowHold].forEach(hold=>{if(hold)clearTimeout(hold.timer)});backgroundHold=null;elementHold=null;arrowHold=null;drag=null;marquee?.element.remove();marquee=null;touchBackground=null;mobileSphereTapCandidate=null;
+  pinch={distance,center,items};return true;
+}
+function updatePinch(){
+  if(!pinch||touchPointers.size<2)return;
+  const points=[...touchPointers.values()].slice(0,2),distance=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y),factor=Math.max(.4,Math.min(3,distance/pinch.distance));
+  pinch.items.forEach(item=>{
+    const sphere=item.sphere;sphere.x=Math.max(0,pinch.center.x+(item.x-pinch.center.x)*factor);sphere.y=Math.max(0,pinch.center.y+(item.y-pinch.center.y)*factor);
+    if(sphere.shape==='square'){sphere.width=Math.max(90,Math.min(innerWidth,item.width*factor));sphere.height=Math.max(squareMinHeight(sphere),item.height*factor)}else sphere.scale=Math.max(.4,Math.min(3,item.scale*factor));
+    sphere.x=Math.min(Math.max(0,innerWidth-sphereWidth(sphere)),sphere.x);
+  });render();
+}
+
 board.addEventListener('pointerdown',event=>{
+  if(event.pointerType==='touch'){
+    touchPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(touchPointers.size===2&&beginPinch()){board.setPointerCapture(event.pointerId);event.preventDefault();return}
+  }
   if(event.target.closest('.color-palette'))return;
   closeColorPalette();
   const imageEl=event.target.closest('.board-image');
@@ -638,6 +694,14 @@ board.addEventListener('pointerdown',event=>{
   }
   const el=event.target.closest('.sphere');
   if(!el){
+    if(event.pointerType==='touch'){
+      focusSphere(null);categoryBar.hidden=true;lastSphereClick=null;render();
+      touchBackground={id:event.pointerId,startX:event.clientX,startY:event.clientY+scrollY,lastX:event.clientX,lastY:event.clientY+scrollY,longPressed:false,moved:false,timer:setTimeout(()=>{
+        if(!touchBackground||touchBackground.id!==event.pointerId)return;
+        touchBackground.longPressed=true;marquee={id:event.pointerId,startX:touchBackground.startX,startY:touchBackground.startY,element:document.createElement('div')};marquee.element.className='selection-box';board.append(marquee.element);updateMarquee(touchBackground.lastX,touchBackground.lastY);
+      },650)};
+      board.setPointerCapture(event.pointerId);return;
+    }
     selectedImageId=null;
     selectedArrowId=null;board.querySelectorAll('.arrow-item.selected').forEach(item=>item.classList.remove('selected'));
     categoryBar.hidden=true;
@@ -656,7 +720,7 @@ board.addEventListener('pointerdown',event=>{
     connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
   const now=performance.now(),previous=lastSphereClick;
-  if(previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
+  if(!coarsePointer&&previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
     const sphere=state.spheres.find(item=>item.id===el.dataset.id);
     lastSphereClick=null;event.preventDefault();
     sphere.shape=sphere.shape==='square'?'circle':'square';render();scheduleSave();return;
@@ -665,9 +729,10 @@ board.addEventListener('pointerdown',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
   const objectSelection=selectedIds.has(el.dataset.id)&&editingId!==el.dataset.id;
   const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=objectSelection?null:caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
+  if(event.pointerType==='touch')mobileSphereTapCandidate={id:event.pointerId,sphereId:el.dataset.id,wasSelected:selectedIds.has(el.dataset.id),caret:clickedCaret,startX:event.clientX,startY:event.clientY};
   if(!selectedIds.has(el.dataset.id))focusSphere(el.dataset.id);
   else selectedId=el.dataset.id;
-  const clickedSphere=selected();if(clickedSphere&&!objectSelection){editingId=clickedSphere.id;setRange(clickedSphere,clickedCaret)}
+  const clickedSphere=selected();if(clickedSphere&&!objectSelection&&!coarsePointer){editingId=clickedSphere.id;setRange(clickedSphere,clickedCaret)}
   elementHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{
     if(!elementHold||elementHold.id!==event.pointerId)return;
     elementHold=null;drag=null;lastSphereClick=null;el.classList.remove('dragging');openColorPalette(clickedSphere);
@@ -675,15 +740,26 @@ board.addEventListener('pointerdown',event=>{
   contracted=false;
   const movingSpheres=state.spheres.filter(sphere=>selectedIds.has(sphere.id)),movingImages=images().filter(image=>selectedImageIds.has(image.id));
   drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y})),imageItems:movingImages.map(image=>({image,x:image.x,y:image.y}))};render();
-  const active=board.querySelector(`[data-id="${selectedId}"]`); active.setPointerCapture(event.pointerId); active.classList.add('dragging');
+  const active=board.querySelector(`[data-id="${selectedId}"]`); active.setPointerCapture(event.pointerId); active.classList.add('dragging');if(event.pointerType==='touch')event.preventDefault();
 });
 board.addEventListener('dblclick',event=>{
+  if(coarsePointer)return;
   if(event.target.closest('.sphere'))return;
   mouse={x:event.clientX,y:event.clientY+scrollY};
   event.preventDefault();addSphere();
 });
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
+  if(event.pointerType==='touch'&&touchPointers.has(event.pointerId))touchPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+  if(pinch){updatePinch();event.preventDefault();return}
+  if(mobileSphereTapCandidate&&event.pointerId===mobileSphereTapCandidate.id&&Math.hypot(event.clientX-mobileSphereTapCandidate.startX,event.clientY-mobileSphereTapCandidate.startY)>7)mobileSphereTapCandidate=null;
+  if(touchBackground&&event.pointerId===touchBackground.id){
+    touchBackground.lastX=event.clientX;touchBackground.lastY=event.clientY+scrollY;
+    const dx=event.clientX-touchBackground.startX,dy=event.clientY+scrollY-touchBackground.startY;touchBackground.moved ||= Math.hypot(dx,dy)>7;
+    if(touchBackground.longPressed&&marquee)updateMarquee(touchBackground.lastX,touchBackground.lastY);
+    else if(scrollY<=0&&dy>64)showCategoryBar();
+    return;
+  }
   if(imageResizeDrag&&event.pointerId===imageResizeDrag.id){
     const item=imageResizeDrag,dx=event.clientX-item.startX,dy=event.clientY-item.startY,minSize=48;let left=item.x,right=item.x+item.width,top=item.y,bottom=item.y+item.height;
     if(item.direction.includes('e'))right=Math.min(innerWidth,Math.max(left+minSize,right+dx));
@@ -750,6 +826,28 @@ function updateMarquee(x,y){
   board.querySelectorAll('.board-image').forEach(el=>el.classList.toggle('selected',selectedImageIds.has(el.dataset.imageId)));
 }
 function endDrag(event){
+  if(event.pointerType==='touch')touchPointers.delete(event.pointerId);
+  if(pinch){
+    if(touchPointers.size<2){pinch=null;render();scheduleSave()}
+    return;
+  }
+  if(touchBackground&&event.pointerId===touchBackground.id){
+    const gesture=touchBackground;clearTimeout(gesture.timer);touchBackground=null;
+    if(gesture.longPressed){marquee?.element.remove();marquee=null;render();return}
+    if(event.type==='pointercancel')return;
+    const dx=event.clientX-gesture.startX,dy=event.clientY+scrollY-gesture.startY;
+    if(Math.abs(dx)>=72&&Math.abs(dx)>Math.abs(dy)*1.35){switchPage(dx<0?1:-1);return}
+    if(!gesture.moved){
+      const now=performance.now(),previous=lastBackgroundTap,point={x:event.clientX,y:event.clientY+scrollY};
+      if(previous&&now-previous.time<420&&Math.hypot(point.x-previous.x,point.y-previous.y)<28){lastBackgroundTap=null;mouse=point;if(!pasteCopiedElementAt(point))addSphere();return}
+      lastBackgroundTap={time:now,...point};
+    }
+    return;
+  }
+  if(mobileSphereTapCandidate&&event.pointerId===mobileSphereTapCandidate.id){
+    const candidate=mobileSphereTapCandidate;mobileSphereTapCandidate=null;
+    if(event.type!=='pointercancel'&&candidate.wasSelected){const sphere=state.spheres.find(item=>item.id===candidate.sphereId);if(sphere){drag=null;if(elementHold){clearTimeout(elementHold.timer);elementHold=null}openMobileEditor(sphere,candidate.caret);return}}
+  }
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
   if(arrowHold&&event.pointerId===arrowHold.id){clearTimeout(arrowHold.timer);arrowHold=null}
@@ -849,9 +947,21 @@ function restoreBackup(){
 }
 function scheduleSave(){state.updatedAt=Date.now();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)}
 async function saveState(){
+  if(nativeApp){
+    try{await window.Capacitor.Plugins.Filesystem.writeFile({path:STATE_FILE,data:JSON.stringify(documentState()),directory:'DATA',encoding:'utf8'})}
+    catch(error){console.error('No se pudo guardar el estado privado de Android.',error)}
+    return;
+  }
   if(!directoryHandle)return;
   try{const handle=await directoryHandle.getFileHandle(STATE_FILE,{create:true}),writable=await handle.createWritable();await writable.write(JSON.stringify(documentState(),null,2));await writable.close()}
   catch(error){console.error(error);notice.hidden=false;errorText.textContent='Se perdió el acceso a la carpeta. Vuelve a seleccionarla.'}
+}
+async function loadNativeState(){
+  try{
+    const result=await window.Capacitor.Plugins.Filesystem.readFile({path:STATE_FILE,directory:'DATA',encoding:'utf8'}),loaded=JSON.parse(result.data);
+    if(Array.isArray(loaded.categories)||Array.isArray(loaded.pages)||Array.isArray(loaded.spheres))setDocument(loaded);
+  }catch(error){if(!String(error?.message??error).toLowerCase().includes('not exist'))console.warn('No se pudo leer el estado privado de Android.',error)}
+  saveBackup();focusSphere(null);render();resetHistory();restoreScroll();
 }
 async function loadState(){
   const backupState=structuredClone(documentState());
@@ -871,7 +981,11 @@ choose.addEventListener('click',async()=>{
 
 async function init(){
   restoreBackup();resetHistory();
-  if(!('showDirectoryPicker'in window)){notice.hidden=false;choose.disabled=true;errorText.textContent='Este navegador no admite acceso local a carpetas. Usa Chrome o Edge.';document.documentElement.classList.remove('restoring-view');return}
+  if(nativeApp){notice.hidden=true;await loadNativeState();if(!state.spheres.length&&!images().length)addSphere(false);document.documentElement.classList.remove('restoring-view');return}
+  if(coarsePointer){notice.hidden=true;render();if(!state.spheres.length&&!images().length)addSphere(false);resetHistory();restoreScroll();return}
+  if(!('showDirectoryPicker'in window)){
+    notice.hidden=false;choose.disabled=true;errorText.textContent='Este navegador no admite acceso local a carpetas. Usa Chrome o Edge.';document.documentElement.classList.remove('restoring-view');return;
+  }
   try{const stored=await recoverHandle();if(stored&&await stored.queryPermission({mode:'readwrite'})==='granted'){directoryHandle=stored;await loadState();if(!state.spheres.length&&!images().length)addSphere(false);return}}catch(error){console.error(error)}
   notice.hidden=false;render();resetHistory();restoreScroll();
 }
