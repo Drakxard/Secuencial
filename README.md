@@ -61,6 +61,10 @@ necesarias para publicar desde esta PC.
 La APK oficial siempre se compila y publica mediante GitHub Actions. No se sube un APK
 creado manualmente y nunca se reutiliza una etiqueta publicada.
 
+Este repositorio trabaja siempre directamente sobre `main`. No se crean ramas ni pull
+requests para cambios, correcciones o publicaciones: cada modificación se prueba, se
+confirma y se sube a `main` antes de crear la etiqueta de la versión.
+
 El repositorio necesita cuatro secretos asociados siempre a la misma firma:
 
 - `SECUENCIAL_KEYSTORE_BASE64`
