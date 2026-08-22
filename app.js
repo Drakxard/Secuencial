@@ -1,4 +1,4 @@
-const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', TEXT_SCALE_KEY='esferas-tamano-texto-v1', SIZE=168;
+const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', TEXT_SCALE_KEY='esferas-tamano-texto-v1', SIZE=168, SQUARE_MIN_WIDTH=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
@@ -286,12 +286,15 @@ function fitSquareToText(sphere,el,text){
   if(sphere.shape!=='square')return;
   const padding=spherePadding(sphere),textStyle=getComputedStyle(text),measure=text.cloneNode(true);
   measure.querySelectorAll('.text-caret').forEach(caret=>caret.remove());
+  measure.querySelectorAll('.text-placeholder').forEach(placeholder=>placeholder.remove());
+  // Una nueva lÃ­nea final tambiÃ©n debe ocupar una fila visible.
+  if(sphere.text.endsWith('\n'))measure.append(document.createTextNode('\u200b'));
   Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',minWidth:'0',maxWidth:'none',height:'max-content',visibility:'hidden',whiteSpace:'pre',font:textStyle.font,lineHeight:textStyle.lineHeight,letterSpacing:textStyle.letterSpacing,pointerEvents:'none'});
   document.body.append(measure);
   const bounds=measure.getBoundingClientRect();
   const requiredWidth=Math.ceil(Math.max(bounds.width,measure.scrollWidth)+padding*2+2),requiredHeight=Math.ceil(Math.max(bounds.height,measure.scrollHeight)+padding*2+2);
-  const nextWidth=Math.min(innerWidth-sphere.x,Math.max(90,sphereWidth(sphere),requiredWidth));
-  const nextHeight=Math.max(squareMinHeight(sphere),sphereHeight(sphere),requiredHeight);
+  const nextWidth=Math.min(innerWidth-sphere.x,Math.max(SQUARE_MIN_WIDTH,requiredWidth));
+  const nextHeight=Math.max(squareMinHeight(sphere),requiredHeight);
   measure.remove();
   const changed=Math.abs(nextWidth-sphereWidth(sphere))>.5||Math.abs(nextHeight-sphereHeight(sphere))>.5;
   if(!changed)return;

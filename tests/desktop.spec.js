@@ -89,3 +89,14 @@ test('un cuadro se ajusta al escribir sin desplazar el scroll',async({page})=>{
   await page.keyboard.press('t');const square=page.locator('.sphere');const before=await square.boundingBox();
   await page.evaluate(()=>scrollTo(0,360));await page.keyboard.type('texto largo que alcanza y supera el borde interno');const after=await square.boundingBox();expect(after.width).toBeGreaterThan(before.width);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(360);
 });
+
+test('T crea una lÃ­nea que crece y se contrae con lÃ­neas en blanco',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
+  await page.keyboard.press('t');const square=page.locator('.sphere');await page.waitForTimeout(220);const initial=await square.boundingBox();
+  expect(initial.height).toBeLessThan(initial.width/2);
+  await page.keyboard.type('texto');await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.waitForTimeout(220);const expanded=await square.boundingBox();
+  expect(expanded.height).toBeGreaterThan(initial.height*2);
+  await page.keyboard.press('Backspace');await page.keyboard.press('Backspace');await page.waitForTimeout(220);const contracted=await square.boundingBox();
+  expect(contracted.height).toBeLessThan(expanded.height);
+});
