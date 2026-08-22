@@ -924,7 +924,10 @@ function endDrag(event){
 }
 board.addEventListener('pointerup',endDrag); board.addEventListener('pointercancel',endDrag);
 window.addEventListener('pointermove',event=>{mouse={x:event.clientX,y:event.clientY+scrollY}});
-window.addEventListener('resize',()=>{state.spheres.forEach(s=>{s.x=Math.max(0,Math.min(innerWidth-sphereWidth(s),s.x));s.y=Math.max(0,s.y)});images().forEach(image=>{image.x=Math.max(0,Math.min(innerWidth-image.width,image.x));image.y=Math.max(0,image.y)});render();scheduleSave()});
+// El zoom del navegador también dispara `resize` y cambia `innerWidth`. Las
+// coordenadas del documento son persistentes: nunca deben recortarse ni
+// guardarse como consecuencia de un cambio del viewport.
+window.addEventListener('resize',()=>{board.style.height=`${canvasHeight()}px`});
 let scrollTimer=null;
 function scrollPositions(){
   try{

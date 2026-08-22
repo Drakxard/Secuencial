@@ -6,6 +6,25 @@ test('escritorio conserva el selector de carpeta',async({page})=>{
   await expect(page.getByRole('button',{name:'Elegir carpeta'})).toBeEnabled();
 });
 
+test('un cambio de viewport no recalcula ni superpone las posiciones',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');
+  await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    state.spheres=[
+      {id:'a',text:'A',x:820,y:180,scale:1},
+      {id:'b',text:'B',x:1040,y:180,scale:1}
+    ];
+    state.images=[{id:'image',src:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',name:'Imagen',x:960,y:420,width:160,height:100}];
+    render();
+  });
+  const before=await page.evaluate(()=>({spheres:state.spheres.map(({x,y})=>({x,y})),images:state.images.map(({x,y})=>({x,y}))}));
+  await page.setViewportSize({width:700,height:650});
+  await page.setViewportSize({width:1280,height:720});
+  const after=await page.evaluate(()=>({spheres:state.spheres.map(({x,y})=>({x,y})),images:state.images.map(({x,y})=>({x,y}))}));
+  expect(after).toEqual(before);
+});
+
 test('el botón de estado alterna pausa, duda y revisión',async({page})=>{
   await page.goto('/');
   const button=page.locator('#progressState');
