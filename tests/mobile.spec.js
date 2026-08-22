@@ -14,7 +14,7 @@ async function gesture(page,from,to,duration=120){
 
 test.beforeEach(async({page})=>{await page.goto('/');await expect(page.locator('.sphere')).toBeVisible();await expect(page.locator('html')).not.toHaveClass(/restoring-view/)});
 
-test('@mobile selecciona, edita y cambia la forma',async({page})=>{
+test('@mobile selecciona y edita con el segundo toque',async({page})=>{
   const sphere=page.locator('.sphere').first(),box=await sphere.boundingBox(),point={x:box.x+box.width/2,y:box.y+box.height/2};
   await page.touchscreen.tap(point.x,point.y);
   await expect(sphere).toHaveClass(/selected/);
@@ -23,8 +23,7 @@ test('@mobile selecciona, edita y cambia la forma',async({page})=>{
   await expect(page.locator('#mobileEditor')).toBeFocused();
   await page.locator('#mobileEditor').fill('Texto móvil');
   await expect(page.locator('.sphere-text')).toContainText('Texto móvil');
-  await page.getByRole('button',{name:'Cambiar forma'}).click();
-  await expect(sphere).toHaveClass(/square/);
+  await expect(page.getByRole('button',{name:'Cambiar forma'})).toHaveCount(0);
 });
 
 test('@mobile activa copia, pega con doble toque y la desactiva',async({page})=>{

@@ -10,6 +10,7 @@ let history=[],historyIndex=-1,restoringHistory=false;
 const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
+let categoryReorder=null,suppressCategoryClick=false;
 
 const progressStates=['pausa','duda','revision'];
 function setProgressState(name){
@@ -67,6 +68,13 @@ function setDocument(value){
 function randomColor(){const row=Math.floor(Math.random()*8),col=Math.floor(Math.random()*16);return `hsl(${col*22.5} ${Math.max(55,92-row*5)}% ${Math.max(22,92-row*10)}%)`}
 function textColorFor(color){return Number(color.match(/(\d+)%\)$/)?.[1]??60)<48?'#f8fafc':'#172033'}
 function textColor(){return textColorFor(state.color)}
+function sphereShape(sphere){return sphere?.shape==='square'?'square':'circle'}
+function defaultArrowColor(color=state.color){
+  const match=String(color).match(/hsl\(\s*([\d.]+)(?:deg)?\s+([\d.]+)%\s+([\d.]+)%\s*\)/i);
+  if(!match)return '#475569';
+  const[,hue,saturation,lightness]=match;
+  return `hsl(${hue} ${Math.max(52,Number(saturation))}% ${Math.max(20,Math.min(42,Number(lightness)-28))}%)`;
+}
 function selected(){return state.spheres.find(s=>s.id===selectedId)}
 function editableSelected(){const sphere=selected();return sphere?.id===editingId?sphere:null}
 function images(){return state.images??(state.images=[])}
@@ -74,7 +82,7 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id,edit=!coarsePointer){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere&&!caretPositions.has(id))setRange(sphere,sphere.text.length)}
+function focusSphere(id,edit=!coarsePointer){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){state.defaultShape=sphereShape(sphere);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
 function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
@@ -121,7 +129,7 @@ function curvedArrowPath(from,to){
 }
 function renderArrows(){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('arrows-layer');
-  svg.style.setProperty('--arrow-color',state.arrowColor??'#202020');
+  svg.style.setProperty('--arrow-color',state.arrowColor??defaultArrowColor());
   const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),tip=document.createElementNS(ns,'path');
   marker.setAttribute('id','arrow-tip');marker.setAttribute('viewBox','0 0 14 14');marker.setAttribute('refX','11.5');marker.setAttribute('refY','7');marker.setAttribute('markerWidth','2.7');marker.setAttribute('markerHeight','2.7');marker.setAttribute('orient','auto');tip.setAttribute('d','M 2 2 L 12 7 L 2 12');tip.setAttribute('fill','none');tip.setAttribute('stroke','context-stroke');tip.setAttribute('stroke-width','3.4');tip.setAttribute('stroke-linecap','round');tip.setAttribute('stroke-linejoin','round');marker.append(tip);defs.append(marker);svg.append(defs);
   arrows().forEach(arrow=>{const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),group=document.createElementNS(ns,'g'),hit=document.createElementNS(ns,'path'),line=document.createElementNS(ns,'path'),d=curvedArrowPath(from,to);group.classList.add('arrow-item');if(arrow.id===selectedArrowId)group.classList.add('selected');group.dataset.arrowId=arrow.id;hit.classList.add('arrow-hit');line.classList.add('arrow-line');hit.setAttribute('d',d);line.setAttribute('d',d);line.setAttribute('marker-end','url(#arrow-tip)');group.append(hit,line);svg.append(group)});
@@ -304,18 +312,12 @@ function render(){
       if(!sphere.text){const placeholder=document.createElement('span');placeholder.className='text-placeholder';placeholder.textContent='Escribe…';text.append(placeholder)}
     }else{if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);else{text.textContent='Escribe…';text.style.opacity='.48'}}
     el.append(text);
-    if(selectedIds.size===1&&selectedIds.has(sphere.id)){
-      const tools=document.createElement('div'),shape=document.createElement('button');tools.className='sphere-tools';
-      shape.type='button';shape.className='sphere-tool';shape.title='Cambiar forma';shape.setAttribute('aria-label','Cambiar forma');shape.textContent=sphere.shape==='square'?'○':'□';
-      shape.addEventListener('pointerdown',event=>event.stopPropagation());
-      shape.addEventListener('click',()=>{sphere.shape=sphere.shape==='square'?'circle':'square';render();scheduleSave()});
-      tools.append(shape);
-      if(coarsePointer){
-        const copy=document.createElement('button');copy.type='button';copy.className='sphere-tool';copy.title='Copiar esfera';copy.setAttribute('aria-label','Copiar esfera');copy.textContent='⧉';
-        copy.addEventListener('pointerdown',event=>event.stopPropagation());
-        copy.addEventListener('click',()=>{copiedElement=structuredClone(sphere);elementPasteCount=0;stopPaste.hidden=false});tools.append(copy);
-      }
-      el.append(tools);
+    if(coarsePointer&&selectedIds.size===1&&selectedIds.has(sphere.id)){
+      const tools=document.createElement('div'),copy=document.createElement('button');tools.className='sphere-tools';
+      copy.type='button';copy.className='sphere-tool';copy.title='Copiar esfera';copy.setAttribute('aria-label','Copiar esfera');copy.textContent='⧉';
+      copy.addEventListener('pointerdown',event=>event.stopPropagation());
+      copy.addEventListener('click',()=>{copiedElement=structuredClone(sphere);elementPasteCount=0;stopPaste.hidden=false});
+      tools.append(copy);el.append(tools);
     }
     board.append(el);
     fitSquareToText(sphere,el,text);
@@ -418,7 +420,7 @@ function exportSvg(){
 function addSphere(selectSphere=true){
   contracted=false;
   const place=openPosition(SIZE);
-  const sphere={id:crypto.randomUUID(),text:'',scale:1,x:place.x,y:place.y};
+  const sphere={id:crypto.randomUUID(),text:'',shape:state.defaultShape==='square'?'square':'circle',scale:1,x:place.x,y:place.y};
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();
@@ -434,7 +436,7 @@ function closeColorPalette(){colorPalette?.restorePreview?.();colorPalette?.remo
 function openColorPalette(sphere,forArrows=false){
   closeColorPalette();
   const palette=document.createElement('div');palette.className='color-palette';palette.setAttribute('aria-label','Color de los elementos');
-  const originalColor=forArrows?(state.arrowColor??'#202020'):state.color;
+  const originalColor=forArrows?(state.arrowColor??defaultArrowColor()):state.color;
   const previewColor=color=>{
     if(forArrows)board.querySelector('.arrows-layer')?.style.setProperty('--arrow-color',color);
     else board.querySelectorAll('.sphere').forEach(item=>{item.style.setProperty('--sphere-color',color);item.style.setProperty('--sphere-text',textColorFor(color))});
@@ -832,7 +834,7 @@ function updateMarquee(x,y){
     return p.x<left+width&&p.x+itemWidth>left&&p.y<top+height&&p.y+itemHeight>top;
   }).map(s=>s.id));
   selectedImageIds=new Set(images().filter(image=>image.x<left+width&&image.x+image.width>left&&image.y<top+height&&image.y+image.height>top).map(image=>image.id));
-  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;if(selectedId&&!caretPositions.has(selectedId))caretPositions.set(selectedId,selected()?.text.length??0);
+  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;const selectedSphere=selected();if(selectedSphere){state.defaultShape=sphereShape(selectedSphere);if(!caretPositions.has(selectedId))caretPositions.set(selectedId,selectedSphere.text.length)}
   board.querySelectorAll('.sphere').forEach(el=>el.classList.toggle('selected',selectedIds.has(el.dataset.id)));
   board.querySelectorAll('.sphere').forEach(el=>el.classList.remove('focused'));
   board.querySelectorAll('.board-image').forEach(el=>el.classList.toggle('selected',selectedImageIds.has(el.dataset.imageId)));
@@ -927,8 +929,36 @@ function renderCategoryBar(){
   categoryList.replaceChildren();
   categories.forEach((category,index)=>{
     const button=document.createElement('button');button.type='button';button.className=`category-button${index===currentCategory?' active':''}`;
-    button.textContent=category.name;button.addEventListener('click',()=>switchCategory(index));categoryList.append(button);
+    button.textContent=category.name;
+    button.addEventListener('click',()=>{if(suppressCategoryClick){suppressCategoryClick=false;return}switchCategory(index)});
+    button.addEventListener('pointerdown',event=>{
+      if(event.button!==undefined&&event.button!==0)return;
+      categoryReorder={id:event.pointerId,from:index,to:index,startX:event.clientX,startY:event.clientY,moved:false,button};
+      button.setPointerCapture(event.pointerId);
+    });
+    button.addEventListener('pointermove',event=>{
+      const drag=categoryReorder;if(!drag||drag.id!==event.pointerId)return;
+      if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>7){drag.moved=true;drag.button.classList.add('reordering')}
+      if(!drag.moved)return;
+      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('.category-button');if(!target)return;
+      const targetIndex=[...categoryList.children].indexOf(target);if(targetIndex<0||targetIndex===drag.to)return;
+      categoryList.querySelectorAll('.reorder-target').forEach(item=>item.classList.remove('reorder-target'));
+      target.classList.add('reorder-target');drag.to=targetIndex;event.preventDefault();
+    });
+    button.addEventListener('pointerup',event=>finishCategoryReorder(event));
+    button.addEventListener('pointercancel',event=>finishCategoryReorder(event,true));
+    categoryList.append(button);
   });
+}
+function finishCategoryReorder(event,cancelled=false){
+  const drag=categoryReorder;if(!drag||drag.id!==event.pointerId)return;
+  categoryReorder=null;categoryList.querySelectorAll('.reordering,.reorder-target').forEach(item=>item.classList.remove('reordering','reorder-target'));
+  if(!drag.moved||cancelled)return;
+  suppressCategoryClick=true;
+  if(drag.to===drag.from)return;
+  const activeCategory=categories[currentCategory],[moved]=categories.splice(drag.from,1);categories.splice(drag.to,0,moved);
+  currentCategory=categories.indexOf(activeCategory);pages=categories[currentCategory].pages;state=pages[currentPage];
+  localStorage.setItem(CATEGORY_KEY,String(currentCategory));renderCategoryBar();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220);
 }
 function showCategoryBar(){closeColorPalette();renderCategoryBar();categoryBar.hidden=false}
 function switchCategory(index){
