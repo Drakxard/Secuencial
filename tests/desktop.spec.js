@@ -57,7 +57,9 @@ test('una flecha puede conectarse a una imagen',async({page})=>{
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.locator('#board').dblclick({position:{x:180,y:200}});
   await page.evaluate(()=>{state.images=[{id:'test-image',src:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',name:'Imagen',x:410,y:180,width:100,height:100}];render()});
-  const sphere=page.locator('.sphere');await sphere.click();const box=await sphere.boundingBox();
-  await page.mouse.move(box.x+box.width-4,box.y+box.height/2);await page.mouse.down();await page.mouse.move(430,230);await page.mouse.up();
+  const sphere=page.locator('.sphere');const box=await sphere.boundingBox();
+  await page.keyboard.press('x');await expect(page.locator('#board')).toHaveClass(/arrow-mode/);
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(430,230);await page.mouse.up();
   await expect.poll(()=>page.evaluate(()=>state.arrows[0]?.toImageId)).toBe('test-image');
+  await page.keyboard.press('x');await expect(page.locator('#board')).not.toHaveClass(/arrow-mode/);
 });

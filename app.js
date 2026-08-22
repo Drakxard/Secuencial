@@ -11,9 +11,11 @@ const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
 let categoryReorder=null,suppressCategoryClick=false;
+let arrowMode=false;
 let defaultFontScales=(()=>{try{const value=JSON.parse(localStorage.getItem(TEXT_SCALE_KEY));return{circle:Number.isFinite(value?.circle)?value.circle:1,square:Number.isFinite(value?.square)?value.square:1}}catch{return{circle:1,square:1}}})();
 
 const progressStates=['pausa','duda','revision'];
+function setArrowMode(enabled){arrowMode=Boolean(enabled);board.classList.toggle('arrow-mode',arrowMode)}
 function setProgressState(name){
   const next=progressStates.includes(name)?name:'pausa';
   progressState.dataset.state=next;
@@ -116,9 +118,9 @@ function arrowEndpoint(arrow,end){
 }
 function localAnchor(sphere,point){return{x:(point.x-sphere.x)/sphereWidth(sphere),y:(point.y-sphere.y)/sphereHeight(sphere)}}
 function localImageAnchor(image,point){return{x:(point.x-image.x)/image.width,y:(point.y-image.y)/image.height}}
-function nearbyImageAt(x,y,padding=22){
+function nearbyImageAt(x,y,excludeId=null,padding=22){
   let best=null,bestDistance=Infinity;
-  images().forEach(image=>{if(x<image.x-padding||x>image.x+image.width+padding||y<image.y-padding||y>image.y+image.height+padding)return;const distance=Math.hypot(x-(image.x+image.width/2),y-(image.y+image.height/2));if(distance<bestDistance){best=image;bestDistance=distance}});
+  images().forEach(image=>{if(image.id===excludeId||x<image.x-padding||x>image.x+image.width+padding||y<image.y-padding||y>image.y+image.height+padding)return;const distance=Math.hypot(x-(image.x+image.width/2),y-(image.y+image.height/2));if(distance<bestDistance){best=image;bestDistance=distance}});
   return best;
 }
 function nearbySphereAt(x,y,excludeId=null,padding=34){
@@ -597,6 +599,7 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
+  if(!editingId&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='x'){event.preventDefault();setArrowMode(!arrowMode);return}
   if(!editingId&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='t'){event.preventDefault();const sphere=addSphere(true,'square',true);if(coarsePointer)openMobileEditor(sphere,0);return}
   if(event.key==='|'&&!editingId){event.preventDefault();exportSvg();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
@@ -699,6 +702,11 @@ board.addEventListener('pointerdown',event=>{
   }
   if(event.target.closest('.color-palette'))return;
   closeColorPalette();
+  if(arrowMode){
+    const point={x:event.clientX,y:event.clientY+scrollY},sourceSphere=state.spheres.find(item=>item.id===event.target.closest('.sphere')?.dataset.id),sourceImage=images().find(item=>item.id===event.target.closest('.board-image')?.dataset.imageId);
+    connectorDrag={id:event.pointerId,fromId:sourceSphere?.id??null,fromImageId:sourceImage?.id??null,from:sourceSphere?borderPoint(sourceSphere,point.x,point.y):sourceImage?imageBorderPoint(sourceImage,point.x,point.y):point,to:point,toId:null,toImageId:null};
+    board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
+  }
   const imageEl=event.target.closest('.board-image');
   if(imageEl){
     const image=images().find(item=>item.id===imageEl.dataset.imageId);if(!image)return;
@@ -741,11 +749,6 @@ board.addEventListener('pointerdown',event=>{
       marquee?.element.remove();marquee=null;backgroundHold=null;deleteCurrentPage();
     },700)};
     updateMarquee(event.clientX,event.clientY+scrollY); return;
-  }
-  const borderSphere=state.spheres.find(item=>item.id===el.dataset.id);
-  if(borderSphere&&editingId!==borderSphere.id&&selectedIds.has(borderSphere.id)&&isConnectorBorder(borderSphere,event,el)){
-    const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);
-    connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
   const now=performance.now(),previous=lastSphereClick;
   if(!coarsePointer&&previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
@@ -811,12 +814,12 @@ board.addEventListener('pointermove',event=>{
   if(!drag&&!imageDrag&&!imageResizeDrag&&!arrowDrag&&!connectorDrag){
     const hoveredImage=document.elementFromPoint(event.clientX,event.clientY)?.closest('.board-image');
     if(hoveredImage){const canResize=hoveredImage.dataset.imageId===selectedImageId&&selectedImageIds.size===1,direction=canResize?imageResizeDirection(hoveredImage,event):'';hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
-    const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
     board.querySelectorAll('.sphere.connector-ready').forEach(item=>item.classList.remove('connector-ready'));
-    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&editingId!==sphere.id&&selectedIds.has(sphere.id)&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y),target=imageTarget?null:nearbySphereAt(point.x,point.y,connectorDrag.fromId);
+    const point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y,connectorDrag.fromImageId),target=imageTarget?null:nearbySphereAt(point.x,point.y,connectorDrag.fromId);
+    const sourceSphere=state.spheres.find(sphere=>sphere.id===connectorDrag.fromId),sourceImage=images().find(image=>image.id===connectorDrag.fromImageId);
+    if(sourceSphere)connectorDrag.from=borderPoint(sourceSphere,point.x,point.y);else if(sourceImage)connectorDrag.from=imageBorderPoint(sourceImage,point.x,point.y);
     if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.toImageId=null;connectorDrag.to=borderPoint(target,point.x,point.y)}
     else if(imageTarget){connectorDrag.toId=null;connectorDrag.toImageId=imageTarget.id;connectorDrag.to=imageBorderPoint(imageTarget,point.x,point.y)}
     else{connectorDrag.toId=null;connectorDrag.toImageId=null;connectorDrag.to=point}
@@ -887,9 +890,13 @@ function endDrag(event){
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
   if(arrowHold&&event.pointerId===arrowHold.id){clearTimeout(arrowHold.timer);arrowHold=null}
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const item=connectorDrag,fromSphere=state.spheres.find(sphere=>sphere.id===item.fromId),target=state.spheres.find(sphere=>sphere.id===item.toId),imageTarget=images().find(image=>image.id===item.toImageId);
-    if(fromSphere&&target)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromAnchor:localAnchor(fromSphere,item.from),toAnchor:localAnchor(target,item.to),fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y});
-    else if(fromSphere&&imageTarget)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:null,toImageId:imageTarget.id,fromAnchor:localAnchor(fromSphere,item.from),toImageAnchor:localImageAnchor(imageTarget,item.to),fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y});
+    const item=connectorDrag,fromSphere=state.spheres.find(sphere=>sphere.id===item.fromId),fromImage=images().find(image=>image.id===item.fromImageId),target=state.spheres.find(sphere=>sphere.id===item.toId),imageTarget=images().find(image=>image.id===item.toImageId);
+    if(event.type!=='pointercancel'&&Math.hypot(item.to.x-item.from.x,item.to.y-item.from.y)>7){
+      const arrow={id:crypto.randomUUID(),fromId:fromSphere?.id??null,fromImageId:fromImage?.id??null,toId:target?.id??null,toImageId:imageTarget?.id??null,fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y};
+      if(fromSphere)arrow.fromAnchor=localAnchor(fromSphere,item.from);else if(fromImage)arrow.fromImageAnchor=localImageAnchor(fromImage,item.from);
+      if(target)arrow.toAnchor=localAnchor(target,item.to);else if(imageTarget)arrow.toImageAnchor=localImageAnchor(imageTarget,item.to);
+      arrows().push(arrow);
+    }
     connectorDrag=null;render();scheduleSave();return;
   }
   if(arrowDrag&&event.pointerId===arrowDrag.id){const changed=arrowDrag.moved;arrowDrag=null;render();if(changed)scheduleSave();return}
