@@ -336,6 +336,11 @@ function render(){
     fitSquareToText(sphere,el,text);
   });
 }
+function renderWhileTyping(){
+  const top=scrollY;render();
+  if(scrollY!==top)scrollTo(0,top);
+  requestAnimationFrame(()=>{if(scrollY!==top)scrollTo(0,top);setTimeout(()=>{if(scrollY!==top)scrollTo(0,top)},0)});
+}
 
 function openMobileEditor(sphere,caret=sphere.text.length){
   editingId=sphere.id;setRange(sphere,caret);mobileEditor.value=sphere.text;mobileEditor.focus({preventScroll:true});
@@ -343,7 +348,7 @@ function openMobileEditor(sphere,caret=sphere.text.length){
 }
 function syncMobileEditor(){
   const sphere=editableSelected();if(!sphere)return;
-  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);render();scheduleTextSave();
+  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);renderWhileTyping();scheduleTextSave();
 }
 mobileEditor.addEventListener('input',syncMobileEditor);
 mobileEditor.addEventListener('select',()=>{const sphere=editableSelected();if(sphere){setRange(sphere,mobileEditor.selectionStart??0,mobileEditor.selectionEnd??0);render()}});
@@ -499,7 +504,7 @@ function type(event){
   else if(event.key.length===1){sphere.text=sphere.text.slice(0,caret)+event.key+sphere.text.slice(caret);caret++}
   else return false;
   setRange(sphere,caret);
-  render(); scheduleTextSave(); return true;
+  renderWhileTyping(); scheduleTextSave(); return true;
 }
 
 function moveCaretByVisibleRow(sphere,caret,direction){

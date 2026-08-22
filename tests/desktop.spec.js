@@ -72,3 +72,10 @@ test('Ctrl+C copia una imagen seleccionada al portapapeles',async({page})=>{
   await page.goto('/');await page.evaluate(()=>{document.querySelector('#folderNotice').hidden=true;state.images=[{id:'copy-image',src:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',name:'Imagen',x:200,y:180,width:100,height:100}];focusImage('copy-image');render()});
   await page.keyboard.press('Control+c');await expect.poll(()=>page.evaluate(()=>window.copiedImageTypes?.[0])).toBe('image/gif');
 });
+
+test('un cuadro se ajusta al escribir sin desplazar el scroll',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
+  await page.keyboard.press('t');const square=page.locator('.sphere');const before=await square.boundingBox();
+  await page.evaluate(()=>scrollTo(0,360));await page.keyboard.type('texto largo');const after=await square.boundingBox();expect(after.width).toBeGreaterThan(before.width);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(360);
+});
