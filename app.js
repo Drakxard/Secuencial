@@ -1,5 +1,5 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
-const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste');
+const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let touchBackground=null,pinch=null,lastBackgroundTap=null,mobileSphereTapCandidate=null;
@@ -10,6 +10,15 @@ let history=[],historyIndex=-1,restoringHistory=false;
 const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
+
+const progressStates=['pausa','duda','revision'];
+function setProgressState(name){
+  const next=progressStates.includes(name)?name:'pausa';
+  progressState.dataset.state=next;
+  progressState.setAttribute('aria-label',`Estado: ${next}`);
+  progressState.title=`Estado: ${next}`;
+}
+progressState.addEventListener('click',()=>setProgressState(progressStates[(progressStates.indexOf(progressState.dataset.state)+1)%progressStates.length]));
 
 function normalizeDocument(value){
   const rawCategories=Array.isArray(value?.categories)?value.categories:[{name:'EO',pages:Array.isArray(value?.pages)?value.pages:Array.isArray(value?.spheres)?[value]:[]}];
@@ -295,14 +304,18 @@ function render(){
       if(!sphere.text){const placeholder=document.createElement('span');placeholder.className='text-placeholder';placeholder.textContent='Escribe…';text.append(placeholder)}
     }else{if(sphere.text)appendMathText(text,sphere.text,sphere.shape==='square',true,false);else{text.textContent='Escribe…';text.style.opacity='.48'}}
     el.append(text);
-    if(coarsePointer&&selectedIds.size===1&&selectedIds.has(sphere.id)){
-      const tools=document.createElement('div'),shape=document.createElement('button'),copy=document.createElement('button');tools.className='sphere-tools';
+    if(selectedIds.size===1&&selectedIds.has(sphere.id)){
+      const tools=document.createElement('div'),shape=document.createElement('button');tools.className='sphere-tools';
       shape.type='button';shape.className='sphere-tool';shape.title='Cambiar forma';shape.setAttribute('aria-label','Cambiar forma');shape.textContent=sphere.shape==='square'?'○':'□';
-      copy.type='button';copy.className='sphere-tool';copy.title='Copiar esfera';copy.setAttribute('aria-label','Copiar esfera');copy.textContent='⧉';
-      [shape,copy].forEach(button=>button.addEventListener('pointerdown',event=>event.stopPropagation()));
+      shape.addEventListener('pointerdown',event=>event.stopPropagation());
       shape.addEventListener('click',()=>{sphere.shape=sphere.shape==='square'?'circle':'square';render();scheduleSave()});
-      copy.addEventListener('click',()=>{copiedElement=structuredClone(sphere);elementPasteCount=0;stopPaste.hidden=false});
-      tools.append(shape,copy);el.append(tools);
+      tools.append(shape);
+      if(coarsePointer){
+        const copy=document.createElement('button');copy.type='button';copy.className='sphere-tool';copy.title='Copiar esfera';copy.setAttribute('aria-label','Copiar esfera');copy.textContent='⧉';
+        copy.addEventListener('pointerdown',event=>event.stopPropagation());
+        copy.addEventListener('click',()=>{copiedElement=structuredClone(sphere);elementPasteCount=0;stopPaste.hidden=false});tools.append(copy);
+      }
+      el.append(tools);
     }
     board.append(el);
     fitSquareToText(sphere,el,text);
@@ -715,24 +728,18 @@ board.addEventListener('pointerdown',event=>{
     updateMarquee(event.clientX,event.clientY+scrollY); return;
   }
   const borderSphere=state.spheres.find(item=>item.id===el.dataset.id);
-  if(borderSphere&&isConnectorBorder(borderSphere,event,el)){
-    const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);focusSphere(null);
+  if(borderSphere&&selectedIds.has(borderSphere.id)&&isConnectorBorder(borderSphere,event,el)){
+    const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);
     connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
-  const now=performance.now(),previous=lastSphereClick;
-  if(!coarsePointer&&previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
-    const sphere=state.spheres.find(item=>item.id===el.dataset.id);
-    lastSphereClick=null;event.preventDefault();
-    sphere.shape=sphere.shape==='square'?'circle':'square';render();scheduleSave();return;
-  }
-  lastSphereClick={id:el.dataset.id,time:now,x:event.clientX,y:event.clientY};
+  lastSphereClick=null;
   mouse={x:event.clientX,y:event.clientY+scrollY};
   const objectSelection=selectedIds.has(el.dataset.id)&&editingId!==el.dataset.id;
-  const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=objectSelection?null:caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
+  const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
   if(event.pointerType==='touch')mobileSphereTapCandidate={id:event.pointerId,sphereId:el.dataset.id,wasSelected:selectedIds.has(el.dataset.id),caret:clickedCaret,startX:event.clientX,startY:event.clientY};
   if(!selectedIds.has(el.dataset.id))focusSphere(el.dataset.id);
   else selectedId=el.dataset.id;
-  const clickedSphere=selected();if(clickedSphere&&!objectSelection&&!coarsePointer){editingId=clickedSphere.id;setRange(clickedSphere,clickedCaret)}
+  const clickedSphere=selected();
   elementHold={id:event.pointerId,startX:event.clientX,startY:event.clientY,timer:setTimeout(()=>{
     if(!elementHold||elementHold.id!==event.pointerId)return;
     elementHold=null;drag=null;lastSphereClick=null;el.classList.remove('dragging');openColorPalette(clickedSphere);
@@ -744,7 +751,12 @@ board.addEventListener('pointerdown',event=>{
 });
 board.addEventListener('dblclick',event=>{
   if(coarsePointer)return;
-  if(event.target.closest('.sphere'))return;
+  const el=event.target.closest('.sphere');
+  if(el){
+    const sphere=state.spheres.find(item=>item.id===el.dataset.id);if(!sphere)return;
+    focusSphere(sphere.id);editingId=sphere.id;setRange(sphere,caretFromPoint(sphere,event.clientX,event.clientY));
+    event.preventDefault();render();return;
+  }
   mouse={x:event.clientX,y:event.clientY+scrollY};
   event.preventDefault();addSphere();
 });
@@ -780,7 +792,7 @@ board.addEventListener('pointermove',event=>{
     if(hoveredImage){const canResize=hoveredImage.dataset.imageId===selectedImageId&&selectedImageIds.size===1,direction=canResize?imageResizeDirection(hoveredImage,event):'';hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
     const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
     board.querySelectorAll('.sphere.connector-ready').forEach(item=>item.classList.remove('connector-ready'));
-    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
+    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&selectedIds.has(sphere.id)&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
     const target=nearbySphereAt(event.clientX,event.clientY+scrollY,connectorDrag.fromId);
