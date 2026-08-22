@@ -1,4 +1,4 @@
-const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SHAPE_KEY='esferas-forma-predeterminada-v1', SIZE=168;
+const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', TEXT_SCALE_KEY='esferas-tamano-texto-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
@@ -11,7 +11,7 @@ const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
 let categoryReorder=null,suppressCategoryClick=false;
-let creationShape=localStorage.getItem(SHAPE_KEY)==='square'?'square':'circle';
+let defaultFontScales=(()=>{try{const value=JSON.parse(localStorage.getItem(TEXT_SCALE_KEY));return{circle:Number.isFinite(value?.circle)?value.circle:1,square:Number.isFinite(value?.square)?value.square:1}}catch{return{circle:1,square:1}}})();
 
 const progressStates=['pausa','duda','revision'];
 function setProgressState(name){
@@ -70,7 +70,8 @@ function randomColor(){const row=Math.floor(Math.random()*8),col=Math.floor(Math
 function textColorFor(color){return Number(color.match(/(\d+)%\)$/)?.[1]??60)<48?'#f8fafc':'#172033'}
 function textColor(){return textColorFor(state.color)}
 function sphereShape(sphere){return sphere?.shape==='square'?'square':'circle'}
-function setCreationShape(shape){creationShape=shape==='square'?'square':'circle';localStorage.setItem(SHAPE_KEY,creationShape)}
+function defaultFontScale(shape){return defaultFontScales[shape==='square'?'square':'circle']}
+function setDefaultFontScale(shape,scale){defaultFontScales[shape==='square'?'square':'circle']=Math.max(.35,Math.min(4,scale??1));localStorage.setItem(TEXT_SCALE_KEY,JSON.stringify(defaultFontScales))}
 function defaultArrowColor(color=state.color){
   const match=String(color).match(/hsl\(\s*([\d.]+)(?:deg)?\s+([\d.]+)%\s+([\d.]+)%\s*\)/i);
   if(!match)return '#475569';
@@ -84,7 +85,7 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id,edit=false){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){setCreationShape(sphereShape(sphere));if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
+function focusSphere(id,edit=false){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
 function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
@@ -427,10 +428,10 @@ function exportSvg(){
   link.href=url;link.download=`${safeCategory}-pagina-${currentPage+1}.svg`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-function addSphere(selectSphere=true,shape=creationShape,edit=false){
+function addSphere(selectSphere=true,shape='circle',edit=false){
   contracted=false;
   const place=openPosition(SIZE);
-  const sphere={id:crypto.randomUUID(),text:'',shape:shape==='square'?'square':'circle',scale:1,x:place.x,y:place.y};
+  const normalizedShape=shape==='square'?'square':'circle',sphere={id:crypto.randomUUID(),text:'',shape:normalizedShape,fontScale:defaultFontScale(normalizedShape),scale:1,x:place.x,y:place.y};
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id,edit);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();return sphere;
@@ -556,6 +557,7 @@ function resizeSelection(grow){
   const allTextSelected=editingId===sphere.id&&sphere.text.length>0&&start===0&&end===sphere.text.length;
   if(allTextSelected){
     sphere.fontScale=Math.max(.35,Math.min(4,(sphere.fontScale??1)*(grow?1.06:.94)));
+    setDefaultFontScale(sphereShape(sphere),sphere.fontScale);
   }else{
     state.spheres.filter(item=>selectedIds.has(item.id)).forEach(item=>{
       if(item.shape==='square'){
@@ -703,7 +705,7 @@ board.addEventListener('pointerdown',event=>{
     lastSphereClick=null;const direction=image.id===selectedImageId&&selectedImageIds.size===1?imageResizeDirection(imageEl,event):'';
     if(direction){focusImage(image.id);imageResizeDrag={id:event.pointerId,image,direction,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y,width:image.width,height:image.height}}
     else{
-      if(!selectedImageIds.has(image.id))focusImage(image.id);
+      if(!selectedImageIds.has(image.id)){focusImage(image.id);event.preventDefault();render();return}
       const imageItems=images().filter(item=>selectedImageIds.has(item.id)).map(item=>({image:item,x:item.x,y:item.y})),sphereItems=state.spheres.filter(sphere=>selectedIds.has(sphere.id)).map(sphere=>({sphere,x:sphere.x,y:sphere.y}));
       imageDrag={id:event.pointerId,startX:event.clientX,startY:event.clientY,imageItems,sphereItems};
     }
@@ -853,7 +855,7 @@ function updateMarquee(x,y){
     return p.x<left+width&&p.x+itemWidth>left&&p.y<top+height&&p.y+itemHeight>top;
   }).map(s=>s.id));
   selectedImageIds=new Set(images().filter(image=>image.x<left+width&&image.x+image.width>left&&image.y<top+height&&image.y+image.height>top).map(image=>image.id));
-  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;const selectedSphere=selected();if(selectedSphere){setCreationShape(sphereShape(selectedSphere));if(!caretPositions.has(selectedId))caretPositions.set(selectedId,selectedSphere.text.length)}
+  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;const selectedSphere=selected();if(selectedSphere){const shape=sphereShape(selectedSphere);setDefaultFontScale(shape,selectedSphere.fontScale??1);if(!caretPositions.has(selectedId))caretPositions.set(selectedId,selectedSphere.text.length)}
   board.querySelectorAll('.sphere').forEach(el=>el.classList.toggle('selected',selectedIds.has(el.dataset.id)));
   board.querySelectorAll('.sphere').forEach(el=>el.classList.remove('focused'));
   board.querySelectorAll('.board-image').forEach(el=>el.classList.toggle('selected',selectedImageIds.has(el.dataset.imageId)));

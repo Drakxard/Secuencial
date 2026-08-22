@@ -25,12 +25,23 @@ test('escritorio crea, mueve y edita con doble clic',async({page})=>{
   await sphere.dblclick();await expect(sphere).toHaveClass(/focused/);
 });
 
-test('la forma seleccionada se usa en nodos nuevos, incluso en otra página',async({page})=>{
+test('el doble clic crea círculos aunque se haya seleccionado un cuadro',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.locator('#board').dblclick({position:{x:300,y:250}});
-  await page.evaluate(()=>{const sphere=state.spheres[0];sphere.shape='square';focusSphere(sphere.id);switchPage(1);addSphere()});
-  await expect(page.locator('.sphere').first()).toHaveClass(/square/);
+  await page.evaluate(()=>{const sphere=state.spheres[0];sphere.shape='square';focusSphere(sphere.id)});
+  await page.locator('#board').dblclick({position:{x:520,y:260}});
+  await expect(page.locator('.sphere').nth(1)).not.toHaveClass(/square/);
+});
+
+test('el tamaño de texto se conserva por forma en nuevos nodos',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
+  await page.locator('#board').dblclick({position:{x:240,y:240}});
+  await page.evaluate(()=>{const sphere=state.spheres[0];sphere.fontScale=1.6;focusSphere(sphere.id);switchPage(1);addSphere()});
+  await expect.poll(()=>page.evaluate(()=>state.spheres[0].fontScale)).toBe(1.6);
+  await page.evaluate(()=>{const square=addSphere(true,'square');square.fontScale=.8;focusSphere(square.id);switchPage(1);addSphere(true,'square')});
+  await expect.poll(()=>page.evaluate(()=>state.spheres[0].fontScale)).toBe(.8);
 });
 
 test('T crea un nodo cuadrado cerca del cursor',async({page})=>{
