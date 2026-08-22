@@ -419,10 +419,10 @@ function exportSvg(){
   link.href=url;link.download=`${safeCategory}-pagina-${currentPage+1}.svg`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-function addSphere(selectSphere=true){
+function addSphere(selectSphere=true,shape=creationShape){
   contracted=false;
   const place=openPosition(SIZE);
-  const sphere={id:crypto.randomUUID(),text:'',shape:creationShape,scale:1,x:place.x,y:place.y};
+  const sphere={id:crypto.randomUUID(),text:'',shape:shape==='square'?'square':'circle',scale:1,x:place.x,y:place.y};
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();
@@ -587,6 +587,7 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
+  if(!editingId&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='t'){event.preventDefault();addSphere(true,'square');return}
   if(event.key==='|'&&!editingId){event.preventDefault();exportSvg();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='y'){if(restoreHistory(1))event.preventDefault();return}
