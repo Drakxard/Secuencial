@@ -294,7 +294,7 @@ function fitSquareToText(sphere,el,text){
   if(!changed)return;
   sphere.width=nextWidth;sphere.height=nextHeight;
   el.style.setProperty('--sphere-width',`${nextWidth}px`);el.style.setProperty('--sphere-height',`${nextHeight}px`);
-  board.style.height=`${canvasHeight()}px`;updateRenderedArrows();scheduleSave();
+  board.style.height=`${canvasHeight()}px`;updateRenderedArrows();(editingId===sphere.id?scheduleTextSave:scheduleSave)();
 }
 
 function render(){
@@ -343,7 +343,7 @@ function openMobileEditor(sphere,caret=sphere.text.length){
 }
 function syncMobileEditor(){
   const sphere=editableSelected();if(!sphere)return;
-  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);render();scheduleSave();
+  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);render();scheduleTextSave();
 }
 mobileEditor.addEventListener('input',syncMobileEditor);
 mobileEditor.addEventListener('select',()=>{const sphere=editableSelected();if(sphere){setRange(sphere,mobileEditor.selectionStart??0,mobileEditor.selectionEnd??0);render()}});
@@ -356,6 +356,14 @@ function pasteCopiedElementAt(point){
   const copy={...structuredClone(copiedElement),id:crypto.randomUUID()},width=sphereWidth(copy),height=sphereHeight(copy);
   copy.x=Math.max(0,Math.min(innerWidth-width,point.x-width/2));copy.y=Math.max(0,point.y-height/2);
   state.spheres.push(copy);focusSphere(copy.id,false);render();scheduleSave();return true;
+}
+
+async function copyImageToClipboard(image){
+  try{
+    const response=await fetch(image.src),blob=await response.blob(),type=blob.type||'image/png';
+    if(!navigator.clipboard?.write||!window.ClipboardItem)throw new Error('El portapapeles de imágenes no está disponible.');
+    await navigator.clipboard.write([new ClipboardItem({[type]:blob})]);
+  }catch(error){console.warn('No se pudo copiar la imagen al portapapeles.',error)}
 }
 
 function imageResizeDirection(frame,event){
@@ -438,6 +446,7 @@ function addSphere(selectSphere=true,shape='circle',edit=false){
   if(selectSphere){focusSphere(sphere.id,edit);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();return sphere;
 }
+function addEditableCircle(){const sphere=addSphere(true,'circle',true);if(coarsePointer)openMobileEditor(sphere,0);return sphere}
 
 function isConnectorBorder(sphere,event,el){
   const rect=el.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,w=rect.width,h=rect.height;
@@ -490,7 +499,7 @@ function type(event){
   else if(event.key.length===1){sphere.text=sphere.text.slice(0,caret)+event.key+sphere.text.slice(caret);caret++}
   else return false;
   setRange(sphere,caret);
-  render(); scheduleSave(); return true;
+  render(); scheduleTextSave(); return true;
 }
 
 function moveCaretByVisibleRow(sphere,caret,direction){
@@ -648,6 +657,8 @@ document.addEventListener('wheel',event=>{
 },{passive:false});
 
 document.addEventListener('copy',event=>{
+  const image=images().find(item=>item.id===selectedImageId);
+  if(image){event.preventDefault();copiedElement=null;copyImageToClipboard(image);return}
   const sphere=selected();if(!sphere)return;
   const range=rangeFor(sphere),start=Math.min(range.anchor,range.focus),end=Math.max(range.anchor,range.focus);
   if(editingId===sphere.id&&start!==end){event.clipboardData.setData('text/plain',sphere.text.slice(start,end));copiedElement=null;event.preventDefault();return}
@@ -782,7 +793,7 @@ board.addEventListener('dblclick',event=>{
     event.preventDefault();render();return;
   }
   mouse={x:event.clientX,y:event.clientY+scrollY};
-  event.preventDefault();addSphere();
+  event.preventDefault();addEditableCircle();
 });
 board.addEventListener('pointermove',event=>{
   mouse={x:event.clientX,y:event.clientY+scrollY};
@@ -877,7 +888,7 @@ function endDrag(event){
     if(Math.abs(dx)>=72&&Math.abs(dx)>Math.abs(dy)*1.35){switchPage(dx<0?1:-1);return}
     if(!gesture.moved){
       const now=performance.now(),previous=lastBackgroundTap,point={x:event.clientX,y:event.clientY+scrollY};
-      if(previous&&now-previous.time<420&&Math.hypot(point.x-previous.x,point.y-previous.y)<28){lastBackgroundTap=null;mouse=point;if(!pasteCopiedElementAt(point))addSphere();return}
+      if(previous&&now-previous.time<420&&Math.hypot(point.x-previous.x,point.y-previous.y)<28){lastBackgroundTap=null;mouse=point;if(!pasteCopiedElementAt(point))addEditableCircle();return}
       lastBackgroundTap={time:now,...point};
     }
     return;
@@ -1017,6 +1028,10 @@ function restoreBackup(){
   catch(error){console.warn('No se pudo recuperar el respaldo local.',error);return false}
 }
 function scheduleSave(){state.updatedAt=Date.now();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)}
+function scheduleTextSave(){
+  state.updatedAt=Date.now();clearTimeout(typingSaveTimer);
+  typingSaveTimer=setTimeout(()=>{recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220)},180);
+}
 async function saveState(){
   if(nativeApp){
     try{await window.Capacitor.Plugins.Filesystem.writeFile({path:STATE_FILE,data:JSON.stringify(documentState()),directory:'DATA',encoding:'utf8'})}
