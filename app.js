@@ -103,15 +103,23 @@ function borderPoint(sphere,x,y){
   if(sphere.shape!=='square'){const length=Math.hypot(dx/(w/2),dy/(h/2))||1;return{x:cx+dx/length,y:cy+dy/length}}
   const scale=1/Math.max(Math.abs(dx)/(w/2),Math.abs(dy)/(h/2),.0001);return{x:cx+dx*scale,y:cy+dy*scale};
 }
+function imageBorderPoint(image,x,y){return{x:Math.max(image.x,Math.min(image.x+image.width,x)),y:Math.max(image.y,Math.min(image.y+image.height,y))}}
 function arrowEndpoint(arrow,end){
-  const sphere=state.spheres.find(item=>item.id===arrow[`${end}Id`]);
-  if(!sphere)return{x:arrow[`${end}X`],y:arrow[`${end}Y`]};
+  const sphere=state.spheres.find(item=>item.id===arrow[`${end}Id`]),image=images().find(item=>item.id===arrow[`${end}ImageId`]);
+  if(!sphere&&!image)return{x:arrow[`${end}X`],y:arrow[`${end}Y`]};
+  const otherEnd=end==='from'?'to':'from',otherSphere=state.spheres.find(item=>item.id===arrow[`${otherEnd}Id`]),otherImage=images().find(item=>item.id===arrow[`${otherEnd}ImageId`]);
+  const target=otherSphere?{x:otherSphere.x+sphereWidth(otherSphere)/2,y:otherSphere.y+sphereHeight(otherSphere)/2}:otherImage?{x:otherImage.x+otherImage.width/2,y:otherImage.y+otherImage.height/2}:{x:arrow[`${otherEnd}X`],y:arrow[`${otherEnd}Y`]};
+  if(image){const anchor=arrow[`${end}ImageAnchor`];return anchor?{x:image.x+anchor.x*image.width,y:image.y+anchor.y*image.height}:imageBorderPoint(image,target.x,target.y)}
   const anchor=arrow[`${end}Anchor`];if(anchor)return{x:sphere.x+anchor.x*sphereWidth(sphere),y:sphere.y+anchor.y*sphereHeight(sphere)};
-  const otherId=arrow[end==='from'?'toId':'fromId'],other=state.spheres.find(item=>item.id===otherId);
-  const target=other?{x:other.x+sphereWidth(other)/2,y:other.y+sphereHeight(other)/2}:{x:arrow[end==='from'?'toX':'fromX'],y:arrow[end==='from'?'toY':'fromY']};
   return borderPoint(sphere,target.x,target.y);
 }
 function localAnchor(sphere,point){return{x:(point.x-sphere.x)/sphereWidth(sphere),y:(point.y-sphere.y)/sphereHeight(sphere)}}
+function localImageAnchor(image,point){return{x:(point.x-image.x)/image.width,y:(point.y-image.y)/image.height}}
+function nearbyImageAt(x,y,padding=22){
+  let best=null,bestDistance=Infinity;
+  images().forEach(image=>{if(x<image.x-padding||x>image.x+image.width+padding||y<image.y-padding||y>image.y+image.height+padding)return;const distance=Math.hypot(x-(image.x+image.width/2),y-(image.y+image.height/2));if(distance<bestDistance){best=image;bestDistance=distance}});
+  return best;
+}
 function nearbySphereAt(x,y,excludeId=null,padding=34){
   let best=null,bestDistance=Infinity;
   state.spheres.forEach(sphere=>{
@@ -592,7 +600,7 @@ document.addEventListener('keydown',event=>{
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='y'){if(restoreHistory(1))event.preventDefault();return}
   if(selectedArrowId&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();state.arrows=arrows().filter(arrow=>arrow.id!==selectedArrowId);selectedArrowId=null;render();scheduleSave();return}
-  if(!editingId&&(selectedIds.size||selectedImageIds.size)&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();[...selectedIds].forEach(removeSphere);state.images=images().filter(image=>!selectedImageIds.has(image.id));selectedId=null;selectedImageId=null;selectedImageIds=new Set();render();scheduleSave();return}
+  if(!editingId&&(selectedIds.size||selectedImageIds.size)&&(event.key==='Delete'||event.key==='Backspace')){event.preventDefault();[...selectedIds].forEach(removeSphere);state.images=images().filter(image=>!selectedImageIds.has(image.id));state.arrows=arrows().filter(arrow=>!selectedImageIds.has(arrow.fromImageId)&&!selectedImageIds.has(arrow.toImageId));selectedId=null;selectedImageId=null;selectedImageIds=new Set();render();scheduleSave();return}
   if(event.key==='Alt'||event.code==='AltLeft'||event.code==='AltRight'){
     altKeyHeld=true;event.preventDefault();return;
   }
@@ -806,16 +814,18 @@ board.addEventListener('pointermove',event=>{
     if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&selectedIds.has(sphere.id)&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const target=nearbySphereAt(event.clientX,event.clientY+scrollY,connectorDrag.fromId);
-    if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.to=borderPoint(target,event.clientX,event.clientY+scrollY)}
-    else{connectorDrag.toId=null;connectorDrag.to={x:event.clientX,y:event.clientY+scrollY}}
+    const point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y),target=imageTarget?null:nearbySphereAt(point.x,point.y,connectorDrag.fromId);
+    if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.toImageId=null;connectorDrag.to=borderPoint(target,point.x,point.y)}
+    else if(imageTarget){connectorDrag.toId=null;connectorDrag.toImageId=imageTarget.id;connectorDrag.to=imageBorderPoint(imageTarget,point.x,point.y)}
+    else{connectorDrag.toId=null;connectorDrag.toImageId=null;connectorDrag.to=point}
     render();return;
   }
   if(arrowDrag&&event.pointerId===arrowDrag.id){
     const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}
-    const item=arrowDrag,arrow=item.arrow,end=item.end,other=end==='from'?'to':'from',point={x:event.clientX,y:event.clientY+scrollY},target=nearbySphereAt(point.x,point.y,arrow[`${other}Id`]);item.moved=true;
-    if(target){const attached=borderPoint(target,point.x,point.y);arrow[`${end}Id`]=target.id;arrow[`${end}Anchor`]=localAnchor(target,attached);arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
-    else{arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}X`]=point.x;arrow[`${end}Y`]=point.y}
+    const item=arrowDrag,arrow=item.arrow,end=item.end,other=end==='from'?'to':'from',point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y),target=imageTarget?null:nearbySphereAt(point.x,point.y,arrow[`${other}Id`]);item.moved=true;
+    if(target){const attached=borderPoint(target,point.x,point.y);arrow[`${end}Id`]=target.id;arrow[`${end}Anchor`]=localAnchor(target,attached);arrow[`${end}ImageId`]=null;arrow[`${end}ImageAnchor`]=null;arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
+    else if(imageTarget){const attached=imageBorderPoint(imageTarget,point.x,point.y);arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}ImageId`]=imageTarget.id;arrow[`${end}ImageAnchor`]=localImageAnchor(imageTarget,attached);arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
+    else{arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}ImageId`]=null;arrow[`${end}ImageAnchor`]=null;arrow[`${end}X`]=point.x;arrow[`${end}Y`]=point.y}
     render();return;
   }
   if(backgroundHold&&event.pointerId===backgroundHold.id&&Math.hypot(event.clientX-backgroundHold.startX,event.clientY-backgroundHold.startY)>7){clearTimeout(backgroundHold.timer);backgroundHold=null}
@@ -875,8 +885,9 @@ function endDrag(event){
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
   if(arrowHold&&event.pointerId===arrowHold.id){clearTimeout(arrowHold.timer);arrowHold=null}
   if(connectorDrag&&event.pointerId===connectorDrag.id){
-    const item=connectorDrag,fromSphere=state.spheres.find(sphere=>sphere.id===item.fromId),target=state.spheres.find(sphere=>sphere.id===item.toId);
+    const item=connectorDrag,fromSphere=state.spheres.find(sphere=>sphere.id===item.fromId),target=state.spheres.find(sphere=>sphere.id===item.toId),imageTarget=images().find(image=>image.id===item.toImageId);
     if(fromSphere&&target)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:target.id,fromAnchor:localAnchor(fromSphere,item.from),toAnchor:localAnchor(target,item.to),fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y});
+    else if(fromSphere&&imageTarget)arrows().push({id:crypto.randomUUID(),fromId:item.fromId,toId:null,toImageId:imageTarget.id,fromAnchor:localAnchor(fromSphere,item.from),toImageAnchor:localImageAnchor(imageTarget,item.to),fromX:item.from.x,fromY:item.from.y,toX:item.to.x,toY:item.to.y});
     connectorDrag=null;render();scheduleSave();return;
   }
   if(arrowDrag&&event.pointerId===arrowDrag.id){const changed=arrowDrag.moved;arrowDrag=null;render();if(changed)scheduleSave();return}

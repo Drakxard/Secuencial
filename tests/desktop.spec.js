@@ -40,3 +40,13 @@ test('T crea un nodo cuadrado cerca del cursor',async({page})=>{
   const sphere=page.locator('.sphere');await expect(sphere).toHaveCount(1);await expect(sphere).toHaveClass(/square/);
   const box=await sphere.boundingBox();expect(Math.abs((box.x+box.width/2)-320)).toBeLessThan(210);expect(Math.abs((box.y+box.height/2)-260)).toBeLessThan(210);
 });
+
+test('una flecha puede conectarse a una imagen',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
+  await page.locator('#board').dblclick({position:{x:180,y:200}});
+  await page.evaluate(()=>{state.images=[{id:'test-image',src:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',name:'Imagen',x:410,y:180,width:100,height:100}];render()});
+  const sphere=page.locator('.sphere');await sphere.click();const box=await sphere.boundingBox();
+  await page.mouse.move(box.x+box.width-4,box.y+box.height/2);await page.mouse.down();await page.mouse.move(430,230);await page.mouse.up();
+  await expect.poll(()=>page.evaluate(()=>state.arrows[0]?.toImageId)).toBe('test-image');
+});
