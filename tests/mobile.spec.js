@@ -14,12 +14,10 @@ async function gesture(page,from,to,duration=120){
 
 test.beforeEach(async({page})=>{await page.goto('/');await expect(page.locator('.sphere')).toBeVisible();await expect(page.locator('html')).not.toHaveClass(/restoring-view/)});
 
-test('@mobile selecciona y edita con el segundo toque',async({page})=>{
+test('@mobile selecciona y edita con un toque',async({page})=>{
   const sphere=page.locator('.sphere').first(),box=await sphere.boundingBox(),point={x:box.x+box.width/2,y:box.y+box.height/2};
   await page.touchscreen.tap(point.x,point.y);
   await expect(sphere).toHaveClass(/selected/);
-  await page.waitForTimeout(450);
-  await page.touchscreen.tap(point.x,point.y);
   await expect(page.locator('#mobileEditor')).toBeFocused();
   await page.locator('#mobileEditor').fill('Texto móvil');
   await expect(page.locator('.sphere-text')).toContainText('Texto móvil');

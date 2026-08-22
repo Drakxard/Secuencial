@@ -12,6 +12,7 @@ const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
 let categoryReorder=null,suppressCategoryClick=false;
 let arrowMode=false;
+let editDirty=false;
 let defaultFontScales=(()=>{try{const value=JSON.parse(localStorage.getItem(TEXT_SCALE_KEY));return{circle:Number.isFinite(value?.circle)?value.circle:1,square:Number.isFinite(value?.square)?value.square:1}}catch{return{circle:1,square:1}}})();
 
 const progressStates=['pausa','duda','revision'];
@@ -87,8 +88,9 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id,edit=false){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
-function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
+function finishEditing(){if(!editingId)return;editingId=null;mobileEditor.blur();if(editDirty){editDirty=false;scheduleSave()}}
+function focusSphere(id,edit=false){if(editingId&&editingId!==id)finishEditing();selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
+function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
@@ -287,14 +289,15 @@ function fitSquareToText(sphere,el,text){
   Object.assign(measure.style,{position:'fixed',left:'-10000px',top:'0',width:'max-content',minWidth:'0',maxWidth:'none',height:'max-content',visibility:'hidden',whiteSpace:'pre',font:textStyle.font,lineHeight:textStyle.lineHeight,letterSpacing:textStyle.letterSpacing,pointerEvents:'none'});
   document.body.append(measure);
   const bounds=measure.getBoundingClientRect();
-  const nextWidth=Math.max(90,Math.ceil(Math.max(bounds.width,measure.scrollWidth)+padding*2+2));
-  const nextHeight=Math.max(squareMinHeight(sphere),Math.ceil(Math.max(bounds.height,measure.scrollHeight)+padding*2+2));
+  const requiredWidth=Math.ceil(Math.max(bounds.width,measure.scrollWidth)+padding*2+2),requiredHeight=Math.ceil(Math.max(bounds.height,measure.scrollHeight)+padding*2+2);
+  const nextWidth=Math.min(innerWidth-sphere.x,Math.max(90,sphereWidth(sphere),requiredWidth));
+  const nextHeight=Math.max(squareMinHeight(sphere),sphereHeight(sphere),requiredHeight);
   measure.remove();
   const changed=Math.abs(nextWidth-sphereWidth(sphere))>.5||Math.abs(nextHeight-sphereHeight(sphere))>.5;
   if(!changed)return;
   sphere.width=nextWidth;sphere.height=nextHeight;
   el.style.setProperty('--sphere-width',`${nextWidth}px`);el.style.setProperty('--sphere-height',`${nextHeight}px`);
-  board.style.height=`${canvasHeight()}px`;updateRenderedArrows();(editingId===sphere.id?scheduleTextSave:scheduleSave)();
+  board.style.height=`${canvasHeight()}px`;updateRenderedArrows();if(editingId===sphere.id)editDirty=true;else scheduleSave();
 }
 
 function render(){
@@ -343,12 +346,12 @@ function renderWhileTyping(){
 }
 
 function openMobileEditor(sphere,caret=sphere.text.length){
-  editingId=sphere.id;setRange(sphere,caret);mobileEditor.value=sphere.text;mobileEditor.focus({preventScroll:true});
+  editingId=sphere.id;editDirty=false;setRange(sphere,caret);mobileEditor.value=sphere.text;mobileEditor.focus({preventScroll:true});
   mobileEditor.setSelectionRange(caret,caret);render();
 }
 function syncMobileEditor(){
   const sphere=editableSelected();if(!sphere)return;
-  sphere.text=mobileEditor.value;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);renderWhileTyping();scheduleTextSave();
+  sphere.text=mobileEditor.value;editDirty=true;setRange(sphere,mobileEditor.selectionStart??sphere.text.length,mobileEditor.selectionEnd??sphere.text.length);renderWhileTyping();
 }
 mobileEditor.addEventListener('input',syncMobileEditor);
 mobileEditor.addEventListener('select',()=>{const sphere=editableSelected();if(sphere){setRange(sphere,mobileEditor.selectionStart??0,mobileEditor.selectionEnd??0);render()}});
@@ -504,7 +507,7 @@ function type(event){
   else if(event.key.length===1){sphere.text=sphere.text.slice(0,caret)+event.key+sphere.text.slice(caret);caret++}
   else return false;
   setRange(sphere,caret);
-  renderWhileTyping(); scheduleTextSave(); return true;
+  editDirty=true;renderWhileTyping();return true;
 }
 
 function moveCaretByVisibleRow(sphere,caret,direction){
@@ -754,6 +757,7 @@ board.addEventListener('pointerdown',event=>{
       },650)};
       board.setPointerCapture(event.pointerId);return;
     }
+    finishEditing();
     selectedImageId=null;
     selectedArrowId=null;board.querySelectorAll('.arrow-item.selected').forEach(item=>item.classList.remove('selected'));
     categoryBar.hidden=true;
@@ -766,17 +770,11 @@ board.addEventListener('pointerdown',event=>{
     },700)};
     updateMarquee(event.clientX,event.clientY+scrollY); return;
   }
-  const now=performance.now(),previous=lastSphereClick;
-  if(!coarsePointer&&previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
-    const sphere=state.spheres.find(item=>item.id===el.dataset.id);if(!sphere)return;
-    lastSphereClick=null;focusSphere(sphere.id);editingId=sphere.id;setRange(sphere,caretFromPoint(sphere,event.clientX,event.clientY));
-    event.preventDefault();render();return;
-  }
-  lastSphereClick={id:el.dataset.id,time:now,x:event.clientX,y:event.clientY};
+  lastSphereClick=null;
   mouse={x:event.clientX,y:event.clientY+scrollY};
   const objectSelection=selectedIds.has(el.dataset.id)&&editingId!==el.dataset.id;
   const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
-  if(event.pointerType==='touch')mobileSphereTapCandidate={id:event.pointerId,sphereId:el.dataset.id,wasSelected:selectedIds.has(el.dataset.id),caret:clickedCaret,startX:event.clientX,startY:event.clientY};
+  mobileSphereTapCandidate={id:event.pointerId,sphereId:el.dataset.id,caret:clickedCaret,startX:event.clientX,startY:event.clientY};
   if(!selectedIds.has(el.dataset.id))focusSphere(el.dataset.id);
   else selectedId=el.dataset.id;
   const clickedSphere=selected();
@@ -786,7 +784,7 @@ board.addEventListener('pointerdown',event=>{
   },700)};
   contracted=false;
   const movingSpheres=state.spheres.filter(sphere=>selectedIds.has(sphere.id)),movingImages=images().filter(image=>selectedImageIds.has(image.id));
-  drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y})),imageItems:movingImages.map(image=>({image,x:image.x,y:image.y}))};render();
+  drag={id:event.pointerId,startX:event.clientX,startY:event.clientY,moved:false,items:movingSpheres.map(sphere=>({sphere,x:sphere.x,y:sphere.y})),imageItems:movingImages.map(image=>({image,x:image.x,y:image.y}))};render();
   const active=board.querySelector(`[data-id="${selectedId}"]`); active.setPointerCapture(event.pointerId); active.classList.add('dragging');if(event.pointerType==='touch')event.preventDefault();
 });
 board.addEventListener('dblclick',event=>{
@@ -853,7 +851,7 @@ board.addEventListener('pointermove',event=>{
   if(elementHold&&event.pointerId===elementHold.id&&Math.hypot(event.clientX-elementHold.startX,event.clientY-elementHold.startY)>7){clearTimeout(elementHold.timer);elementHold=null}
   if(marquee&&event.pointerId===marquee.id){updateMarquee(event.clientX,event.clientY+scrollY);return}
   if(!drag||event.pointerId!==drag.id)return;
-  if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>=7)lastSphereClick=null;
+  if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>=7){lastSphereClick=null;drag.moved=true}
   let dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;
   const horizontal=[...drag.items.map(item=>({x:item.x,width:sphereWidth(item.sphere)})),...drag.imageItems.map(item=>({x:item.x,width:item.image.width}))],vertical=[...drag.items.map(item=>({y:item.y,height:sphereHeight(item.sphere)})),...drag.imageItems.map(item=>({y:item.y,height:item.image.height}))];
   const minDx=Math.max(...horizontal.map(item=>-item.x)),maxDx=Math.min(...horizontal.map(item=>innerWidth-item.width-item.x));
@@ -900,7 +898,7 @@ function endDrag(event){
   }
   if(mobileSphereTapCandidate&&event.pointerId===mobileSphereTapCandidate.id){
     const candidate=mobileSphereTapCandidate;mobileSphereTapCandidate=null;
-    if(event.type!=='pointercancel'&&candidate.wasSelected){const sphere=state.spheres.find(item=>item.id===candidate.sphereId);if(sphere){drag=null;if(elementHold){clearTimeout(elementHold.timer);elementHold=null}openMobileEditor(sphere,candidate.caret);return}}
+    if(event.type!=='pointercancel'){const sphere=state.spheres.find(item=>item.id===candidate.sphereId);if(sphere){drag=null;if(elementHold){clearTimeout(elementHold.timer);elementHold=null}if(coarsePointer)openMobileEditor(sphere,candidate.caret);else{editingId=sphere.id;editDirty=false;setRange(sphere,candidate.caret);render()}return}}
   }
   if(backgroundHold&&event.pointerId===backgroundHold.id){clearTimeout(backgroundHold.timer);backgroundHold=null}
   if(elementHold&&event.pointerId===elementHold.id){clearTimeout(elementHold.timer);elementHold=null}
@@ -919,7 +917,7 @@ function endDrag(event){
   if(imageResizeDrag&&event.pointerId===imageResizeDrag.id){imageResizeDrag=null;render();scheduleSave();return}
   if(imageDrag&&event.pointerId===imageDrag.id){imageDrag=null;render();scheduleSave();return}
   if(marquee&&event.pointerId===marquee.id){marquee.element.remove();marquee=null;render();return}
-  if(!drag||event.pointerId!==drag.id)return;drag=null;scheduleSave();render()
+  if(!drag||event.pointerId!==drag.id)return;const moved=drag.moved;drag=null;if(moved)scheduleSave();render()
 }
 board.addEventListener('pointerup',endDrag); board.addEventListener('pointercancel',endDrag);
 window.addEventListener('pointermove',event=>{mouse={x:event.clientX,y:event.clientY+scrollY}});

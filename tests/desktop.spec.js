@@ -15,14 +15,24 @@ test('el botón de estado alterna pausa, duda y revisión',async({page})=>{
   await button.click();await expect(button).toHaveAttribute('data-state','pausa');
 });
 
-test('escritorio crea, mueve y edita con doble clic',async({page})=>{
+test('escritorio crea, mueve y edita con un clic',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.locator('#board').dblclick({position:{x:300,y:250}});
   const sphere=page.locator('.sphere').first();await expect(sphere).toHaveCount(1);
   await sphere.click();
   await expect(page.getByRole('button',{name:'Cambiar forma'})).toHaveCount(0);
-  await sphere.dblclick();await expect(sphere).toHaveClass(/focused/);
+  await sphere.click();await expect(sphere).toHaveClass(/focused/);
+});
+
+test('las flechas navegan el texto y el arrastre mueve sin editar',async({page})=>{
+  await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
+  await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
+  await page.locator('#board').dblclick({position:{x:300,y:250}});const sphere=page.locator('.sphere').first();
+  await page.keyboard.type('abc');await page.keyboard.press('ArrowLeft');await page.keyboard.type('X');
+  await expect(sphere.locator('.sphere-text')).toContainText('abXc');
+  const before=await sphere.boundingBox();await sphere.dragTo(page.locator('#board'),{targetPosition:{x:520,y:420}});const after=await sphere.boundingBox();
+  expect(Math.hypot(after.x-before.x,after.y-before.y)).toBeGreaterThan(40);
 });
 
 test('el doble clic crea círculos aunque se haya seleccionado un cuadro',async({page})=>{
@@ -77,5 +87,5 @@ test('un cuadro se ajusta al escribir sin desplazar el scroll',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.keyboard.press('t');const square=page.locator('.sphere');const before=await square.boundingBox();
-  await page.evaluate(()=>scrollTo(0,360));await page.keyboard.type('texto largo');const after=await square.boundingBox();expect(after.width).toBeGreaterThan(before.width);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(360);
+  await page.evaluate(()=>scrollTo(0,360));await page.keyboard.type('texto largo que alcanza y supera el borde interno');const after=await square.boundingBox();expect(after.width).toBeGreaterThan(before.width);await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(360);
 });
