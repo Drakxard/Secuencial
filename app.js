@@ -106,7 +106,7 @@ function borderPoint(sphere,x,y){
   if(sphere.shape!=='square'){const length=Math.hypot(dx/(w/2),dy/(h/2))||1;return{x:cx+dx/length,y:cy+dy/length}}
   const scale=1/Math.max(Math.abs(dx)/(w/2),Math.abs(dy)/(h/2),.0001);return{x:cx+dx*scale,y:cy+dy*scale};
 }
-function imageBorderPoint(image,x,y){return{x:Math.max(image.x,Math.min(image.x+image.width,x)),y:Math.max(image.y,Math.min(image.y+image.height,y))}}
+function imageBorderPoint(image,x,y){const cx=image.x+image.width/2,cy=image.y+image.height/2,dx=x-cx,dy=y-cy,scale=1/Math.max(Math.abs(dx)/(image.width/2),Math.abs(dy)/(image.height/2),.0001);return{x:cx+dx*scale,y:cy+dy*scale}}
 function arrowEndpoint(arrow,end){
   const sphere=state.spheres.find(item=>item.id===arrow[`${end}Id`]),image=images().find(item=>item.id===arrow[`${end}ImageId`]);
   if(!sphere&&!image)return{x:arrow[`${end}X`],y:arrow[`${end}Y`]};
@@ -713,7 +713,7 @@ board.addEventListener('pointerdown',event=>{
     lastSphereClick=null;const direction=image.id===selectedImageId&&selectedImageIds.size===1?imageResizeDirection(imageEl,event):'';
     if(direction){focusImage(image.id);imageResizeDrag={id:event.pointerId,image,direction,startX:event.clientX,startY:event.clientY,x:image.x,y:image.y,width:image.width,height:image.height}}
     else{
-      if(!selectedImageIds.has(image.id)){focusImage(image.id);event.preventDefault();render();return}
+      if(!selectedImageIds.has(image.id))focusImage(image.id);
       const imageItems=images().filter(item=>selectedImageIds.has(item.id)).map(item=>({image:item,x:item.x,y:item.y})),sphereItems=state.spheres.filter(sphere=>selectedIds.has(sphere.id)).map(sphere=>({sphere,x:sphere.x,y:sphere.y}));
       imageDrag={id:event.pointerId,startX:event.clientX,startY:event.clientY,imageItems,sphereItems};
     }
@@ -821,7 +821,7 @@ board.addEventListener('pointermove',event=>{
     const sourceSphere=state.spheres.find(sphere=>sphere.id===connectorDrag.fromId),sourceImage=images().find(image=>image.id===connectorDrag.fromImageId);
     if(sourceSphere)connectorDrag.from=borderPoint(sourceSphere,point.x,point.y);else if(sourceImage)connectorDrag.from=imageBorderPoint(sourceImage,point.x,point.y);
     if(target&&target.id!==connectorDrag.fromId){connectorDrag.toId=target.id;connectorDrag.toImageId=null;connectorDrag.to=borderPoint(target,point.x,point.y)}
-    else if(imageTarget){connectorDrag.toId=null;connectorDrag.toImageId=imageTarget.id;connectorDrag.to=imageBorderPoint(imageTarget,point.x,point.y)}
+    else if(imageTarget){connectorDrag.toId=null;connectorDrag.toImageId=imageTarget.id;connectorDrag.to=imageBorderPoint(imageTarget,connectorDrag.from.x,connectorDrag.from.y)}
     else{connectorDrag.toId=null;connectorDrag.toImageId=null;connectorDrag.to=point}
     render();return;
   }
@@ -829,7 +829,7 @@ board.addEventListener('pointermove',event=>{
     const dx=event.clientX-arrowDrag.startX,dy=event.clientY-arrowDrag.startY;if(Math.hypot(dx,dy)<7)return;if(arrowHold){clearTimeout(arrowHold.timer);arrowHold=null}
     const item=arrowDrag,arrow=item.arrow,end=item.end,other=end==='from'?'to':'from',point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y),target=imageTarget?null:nearbySphereAt(point.x,point.y,arrow[`${other}Id`]);item.moved=true;
     if(target){const attached=borderPoint(target,point.x,point.y);arrow[`${end}Id`]=target.id;arrow[`${end}Anchor`]=localAnchor(target,attached);arrow[`${end}ImageId`]=null;arrow[`${end}ImageAnchor`]=null;arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
-    else if(imageTarget){const attached=imageBorderPoint(imageTarget,point.x,point.y);arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}ImageId`]=imageTarget.id;arrow[`${end}ImageAnchor`]=localImageAnchor(imageTarget,attached);arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
+    else if(imageTarget){const otherPoint=arrowEndpoint(arrow,other),attached=imageBorderPoint(imageTarget,otherPoint.x,otherPoint.y);arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}ImageId`]=imageTarget.id;arrow[`${end}ImageAnchor`]=localImageAnchor(imageTarget,attached);arrow[`${end}X`]=attached.x;arrow[`${end}Y`]=attached.y}
     else{arrow[`${end}Id`]=null;arrow[`${end}Anchor`]=null;arrow[`${end}ImageId`]=null;arrow[`${end}ImageAnchor`]=null;arrow[`${end}X`]=point.x;arrow[`${end}Y`]=point.y}
     render();return;
   }

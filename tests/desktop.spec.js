@@ -61,5 +61,6 @@ test('una flecha puede conectarse a una imagen',async({page})=>{
   await page.keyboard.press('x');await expect(page.locator('#board')).toHaveClass(/arrow-mode/);
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(430,230);await page.mouse.up();
   await expect.poll(()=>page.evaluate(()=>state.arrows[0]?.toImageId)).toBe('test-image');
+  await expect.poll(()=>page.evaluate(()=>state.arrows[0]?.toImageAnchor?.x)).toBe(0);
   await page.keyboard.press('x');await expect(page.locator('#board')).not.toHaveClass(/arrow-mode/);
 });
