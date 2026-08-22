@@ -427,13 +427,13 @@ function exportSvg(){
   link.href=url;link.download=`${safeCategory}-pagina-${currentPage+1}.svg`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-function addSphere(selectSphere=true,shape=creationShape){
+function addSphere(selectSphere=true,shape=creationShape,edit=false){
   contracted=false;
   const place=openPosition(SIZE);
   const sphere={id:crypto.randomUUID(),text:'',shape:shape==='square'?'square':'circle',scale:1,x:place.x,y:place.y};
   state.spheres.push(sphere);
-  if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
-  contracted=false; render(); scheduleSave();
+  if(selectSphere){focusSphere(sphere.id,edit);setRange(sphere,0)}else focusSphere(null);
+  contracted=false; render(); scheduleSave();return sphere;
 }
 
 function isConnectorBorder(sphere,event,el){
@@ -595,7 +595,7 @@ function finishAltNumericCode(){
 
 document.addEventListener('keydown',event=>{
   if(!notice.hidden)return;
-  if(!editingId&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='t'){event.preventDefault();addSphere(true,'square');return}
+  if(!editingId&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='t'){event.preventDefault();const sphere=addSphere(true,'square',true);if(coarsePointer)openMobileEditor(sphere,0);return}
   if(event.key==='|'&&!editingId){event.preventDefault();exportSvg();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='z'){if(restoreHistory(-1))event.preventDefault();return}
   if((event.ctrlKey||event.metaKey)&&!event.altKey&&event.key.toLowerCase()==='y'){if(restoreHistory(1))event.preventDefault();return}
@@ -741,7 +741,7 @@ board.addEventListener('pointerdown',event=>{
     updateMarquee(event.clientX,event.clientY+scrollY); return;
   }
   const borderSphere=state.spheres.find(item=>item.id===el.dataset.id);
-  if(borderSphere&&selectedIds.has(borderSphere.id)&&isConnectorBorder(borderSphere,event,el)){
+  if(borderSphere&&editingId!==borderSphere.id&&selectedIds.has(borderSphere.id)&&isConnectorBorder(borderSphere,event,el)){
     const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);
     connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
@@ -811,7 +811,7 @@ board.addEventListener('pointermove',event=>{
     if(hoveredImage){const canResize=hoveredImage.dataset.imageId===selectedImageId&&selectedImageIds.size===1,direction=canResize?imageResizeDirection(hoveredImage,event):'';hoveredImage.style.cursor=direction?`${direction}-resize`:'grab'}
     const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sphere');
     board.querySelectorAll('.sphere.connector-ready').forEach(item=>item.classList.remove('connector-ready'));
-    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&selectedIds.has(sphere.id)&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
+    if(hovered){const sphere=state.spheres.find(item=>item.id===hovered.dataset.id);if(sphere&&editingId!==sphere.id&&selectedIds.has(sphere.id)&&isConnectorBorder(sphere,event,hovered))hovered.classList.add('connector-ready')}
   }
   if(connectorDrag&&event.pointerId===connectorDrag.id){
     const point={x:event.clientX,y:event.clientY+scrollY},imageTarget=nearbyImageAt(point.x,point.y),target=imageTarget?null:nearbySphereAt(point.x,point.y,connectorDrag.fromId);

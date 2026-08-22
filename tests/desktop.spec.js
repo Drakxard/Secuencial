@@ -37,7 +37,7 @@ test('T crea un nodo cuadrado cerca del cursor',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.mouse.move(320,260);await page.keyboard.press('t');
-  const sphere=page.locator('.sphere');await expect(sphere).toHaveCount(1);await expect(sphere).toHaveClass(/square/);
+  const sphere=page.locator('.sphere');await expect(sphere).toHaveCount(1);await expect(sphere).toHaveClass(/square/);await expect(sphere).toHaveClass(/focused/);
   const box=await sphere.boundingBox();expect(Math.abs((box.x+box.width/2)-320)).toBeLessThan(210);expect(Math.abs((box.y+box.height/2)-260)).toBeLessThan(210);
 });
 
