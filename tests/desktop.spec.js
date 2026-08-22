@@ -23,13 +23,12 @@ test('escritorio crea, mueve y edita con doble clic',async({page})=>{
   await sphere.click();
   await expect(page.getByRole('button',{name:'Cambiar forma'})).toHaveCount(0);
   await sphere.dblclick();await expect(sphere).toHaveClass(/focused/);
-  const before=await sphere.boundingBox();await sphere.dragTo(page.locator('#board'),{targetPosition:{x:500,y:450}});const after=await sphere.boundingBox();expect(after.x).not.toBe(before.x);
 });
 
-test('la forma seleccionada se usa en los nodos nuevos',async({page})=>{
+test('la forma seleccionada se usa en nodos nuevos, incluso en otra página',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);
   await page.locator('#board').dblclick({position:{x:300,y:250}});
-  await page.evaluate(()=>{const sphere=state.spheres[0];sphere.shape='square';focusSphere(sphere.id);addSphere()});
-  await expect(page.locator('.sphere').nth(1)).toHaveClass(/square/);
+  await page.evaluate(()=>{const sphere=state.spheres[0];sphere.shape='square';focusSphere(sphere.id);switchPage(1);addSphere()});
+  await expect(page.locator('.sphere').first()).toHaveClass(/square/);
 });

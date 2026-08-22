@@ -1,4 +1,4 @@
-const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SIZE=168;
+const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', SHAPE_KEY='esferas-forma-predeterminada-v1', SIZE=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
@@ -11,6 +11,7 @@ const caretPositions=new Map();
 const selectionRanges=new Map();
 let state={color:randomColor(),spheres:[]}, pages=[state], categories=[{name:'EO',pages}], currentCategory=0, currentPage=0, restoringScroll=false;
 let categoryReorder=null,suppressCategoryClick=false;
+let creationShape=localStorage.getItem(SHAPE_KEY)==='square'?'square':'circle';
 
 const progressStates=['pausa','duda','revision'];
 function setProgressState(name){
@@ -69,6 +70,7 @@ function randomColor(){const row=Math.floor(Math.random()*8),col=Math.floor(Math
 function textColorFor(color){return Number(color.match(/(\d+)%\)$/)?.[1]??60)<48?'#f8fafc':'#172033'}
 function textColor(){return textColorFor(state.color)}
 function sphereShape(sphere){return sphere?.shape==='square'?'square':'circle'}
+function setCreationShape(shape){creationShape=shape==='square'?'square':'circle';localStorage.setItem(SHAPE_KEY,creationShape)}
 function defaultArrowColor(color=state.color){
   const match=String(color).match(/hsl\(\s*([\d.]+)(?:deg)?\s+([\d.]+)%\s+([\d.]+)%\s*\)/i);
   if(!match)return '#475569';
@@ -82,7 +84,7 @@ function rangeFor(sphere){const caret=Math.max(0,Math.min(sphere.text.length,car
 function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
-function focusSphere(id,edit=!coarsePointer){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){state.defaultShape=sphereShape(sphere);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
+function focusSphere(id,edit=false){selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){setCreationShape(sphereShape(sphere));if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
 function focusImage(id){selectedArrowId=null;selectedId=null;editingId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
@@ -420,7 +422,7 @@ function exportSvg(){
 function addSphere(selectSphere=true){
   contracted=false;
   const place=openPosition(SIZE);
-  const sphere={id:crypto.randomUUID(),text:'',shape:state.defaultShape==='square'?'square':'circle',scale:1,x:place.x,y:place.y};
+  const sphere={id:crypto.randomUUID(),text:'',shape:creationShape,scale:1,x:place.x,y:place.y};
   state.spheres.push(sphere);
   if(selectSphere){focusSphere(sphere.id);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();
@@ -734,7 +736,13 @@ board.addEventListener('pointerdown',event=>{
     const point=borderPoint(borderSphere,event.clientX,event.clientY+scrollY);
     connectorDrag={id:event.pointerId,fromId:borderSphere.id,from:point,to:{x:event.clientX,y:event.clientY+scrollY}};board.setPointerCapture(event.pointerId);event.preventDefault();render();return;
   }
-  lastSphereClick=null;
+  const now=performance.now(),previous=lastSphereClick;
+  if(!coarsePointer&&previous&&previous.id===el.dataset.id&&now-previous.time<420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<7){
+    const sphere=state.spheres.find(item=>item.id===el.dataset.id);if(!sphere)return;
+    lastSphereClick=null;focusSphere(sphere.id);editingId=sphere.id;setRange(sphere,caretFromPoint(sphere,event.clientX,event.clientY));
+    event.preventDefault();render();return;
+  }
+  lastSphereClick={id:el.dataset.id,time:now,x:event.clientX,y:event.clientY};
   mouse={x:event.clientX,y:event.clientY+scrollY};
   const objectSelection=selectedIds.has(el.dataset.id)&&editingId!==el.dataset.id;
   const clickedSphereBeforeFocus=state.spheres.find(item=>item.id===el.dataset.id),clickedCaret=caretFromPoint(clickedSphereBeforeFocus,event.clientX,event.clientY);
@@ -834,7 +842,7 @@ function updateMarquee(x,y){
     return p.x<left+width&&p.x+itemWidth>left&&p.y<top+height&&p.y+itemHeight>top;
   }).map(s=>s.id));
   selectedImageIds=new Set(images().filter(image=>image.x<left+width&&image.x+image.width>left&&image.y<top+height&&image.y+image.height>top).map(image=>image.id));
-  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;const selectedSphere=selected();if(selectedSphere){state.defaultShape=sphereShape(selectedSphere);if(!caretPositions.has(selectedId))caretPositions.set(selectedId,selectedSphere.text.length)}
+  editingId=null;selectedImageId=null;selectedId=[...selectedIds][0]??null;const selectedSphere=selected();if(selectedSphere){setCreationShape(sphereShape(selectedSphere));if(!caretPositions.has(selectedId))caretPositions.set(selectedId,selectedSphere.text.length)}
   board.querySelectorAll('.sphere').forEach(el=>el.classList.toggle('selected',selectedIds.has(el.dataset.id)));
   board.querySelectorAll('.sphere').forEach(el=>el.classList.remove('focused'));
   board.querySelectorAll('.board-image').forEach(el=>el.classList.toggle('selected',selectedImageIds.has(el.dataset.imageId)));
