@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
 
-const root=resolve(import.meta.dirname,'..'),types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'};
+const root=resolve(import.meta.dirname,'..','www'),types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'};
 createServer(async(request,response)=>{
   const pathname=new URL(request.url,'http://localhost').pathname,file=resolve(root,pathname==='/'?'index.html':pathname.slice(1));
   if(!file.startsWith(root+sep)){response.writeHead(403).end();return}

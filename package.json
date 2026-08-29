@@ -6,7 +6,7 @@
     "web:prepare": "node scripts/prepare-web.mjs",
     "android:sync": "npm run web:prepare && cap sync android",
     "android:build": "npm run android:sync && cd android && gradlew.bat assembleDebug",
-    "test": "playwright test",
+    "test": "npm run web:prepare && playwright test",
     "test:install": "playwright install chromium"
   },
   "dependencies": {
