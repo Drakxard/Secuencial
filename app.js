@@ -1,5 +1,5 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', TEXT_SCALE_KEY='esferas-tamano-texto-v1', SIZE=168, SQUARE_MIN_WIDTH=168;
-const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState');
+const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState'), pdfStatus=document.querySelector('#pdfStatus');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let touchBackground=null,pinch=null,lastBackgroundTap=null,mobileSphereTapCandidate=null;
@@ -90,7 +90,7 @@ function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,ran
 function arrows(){return state.arrows??(state.arrows=[])}
 function finishEditing(){if(!editingId)return;editingId=null;mobileEditor.blur();if(editDirty){editDirty=false;scheduleSave()}}
 function focusSphere(id,edit=false){if(editingId&&editingId!==id)finishEditing();selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
-function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
+function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;const image=images().find(item=>item.id===id),groupId=image?.groupId;selectedImageIds=new Set(id?images().filter(item=>groupId?item.groupId===groupId:item.id===id).map(item=>item.id):[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
@@ -457,6 +457,42 @@ function addSphere(selectSphere=true,shape='circle',edit=false){
   if(selectSphere){focusSphere(sphere.id,edit);setRange(sphere,0)}else focusSphere(null);
   contracted=false; render(); scheduleSave();return sphere;
 }
+
+async function pastePdf(file,targetState,point){
+  if(!window.pdfjsLib)throw new Error('El lector de PDF no pudo iniciarse.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc='pdf.worker.min.js';
+  const data=new Uint8Array(await file.arrayBuffer()),pdfDocument=await pdfjsLib.getDocument({data}).promise,groupId=crypto.randomUUID(),created=[];
+  let nextY=Math.max(0,point.y);
+  try{
+    for(let pageNumber=1;pageNumber<=pdfDocument.numPages;pageNumber++){
+      pdfStatus.textContent=`Procesando PDF: página ${pageNumber} de ${pdfDocument.numPages}`;
+      const page=await pdfDocument.getPage(pageNumber),base=page.getViewport({scale:1}),displayWidth=Math.min(innerWidth*.78,900),displayScale=displayWidth/base.width,width=Math.round(base.width*displayScale),height=Math.round(base.height*displayScale),renderScale=Math.min(2.2,1600/base.width),viewport=page.getViewport({scale:renderScale}),canvas=document.createElement('canvas');
+      canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+      await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport}).promise;
+      const image={id:crypto.randomUUID(),groupId,src:canvas.toDataURL('image/jpeg',.92),name:`${file.name} — página ${pageNumber}`,x:Math.max(0,Math.min(innerWidth-width,point.x-width/2)),y:nextY,width,height};
+      created.push(image);nextY+=height+16;page.cleanup();
+    }
+    (targetState.images??(targetState.images=[])).push(...created);
+    if(state===targetState){focusImage(created[0]?.id);render()}
+    targetState.updatedAt=Date.now();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220);
+    if(created.length)scrollTo({top:Math.max(0,created[0].y-24),behavior:'smooth'});
+    return created;
+  }finally{pdfDocument.destroy()}
+}
+
+async function importDroppedFiles(files,point){
+  const accepted=[...files].filter(file=>file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')||file.type.startsWith('image/'));
+  if(!accepted.length)return;
+  pdfStatus.hidden=false;
+  try{
+    let y=point.y;
+    for(const file of accepted){
+      if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){const pages=await pastePdf(file,state,{x:point.x,y});if(pages.length)y=Math.max(...pages.map(page=>page.y+page.height))+32}
+      else{pdfStatus.textContent=`Cargando ${file.name}`;await pasteImage(file,state,{x:point.x,y});const image=images().at(-1);if(image)y=image.y+image.height+32}
+    }
+  }catch(error){console.error('No se pudo importar el archivo.',error);pdfStatus.textContent=`No se pudo importar: ${error.message}`;await new Promise(resolve=>setTimeout(resolve,2200))}
+  finally{pdfStatus.hidden=true;pdfStatus.textContent=''}
+}
 function addEditableCircle(){const sphere=addSphere(true,'circle',true);if(coarsePointer)openMobileEditor(sphere,0);return sphere}
 
 function isConnectorBorder(sphere,event,el){
@@ -697,6 +733,25 @@ document.addEventListener('paste',event=>{
   sphere.text=sphere.text.slice(0,start)+pastedText+sphere.text.slice(end);
   setRange(sphere,start+pastedText.length);
   render();scheduleSave();
+});
+
+let fileDragDepth=0;
+document.addEventListener('dragenter',event=>{
+  if(!notice.hidden||![...event.dataTransfer?.types??[]].includes('Files'))return;
+  event.preventDefault();fileDragDepth++;board.classList.add('file-over');
+});
+document.addEventListener('dragover',event=>{
+  if(!notice.hidden||![...event.dataTransfer?.types??[]].includes('Files'))return;
+  event.preventDefault();event.dataTransfer.dropEffect='copy';board.classList.add('file-over');
+});
+document.addEventListener('dragleave',event=>{
+  if(![...event.dataTransfer?.types??[]].includes('Files'))return;
+  fileDragDepth=Math.max(0,fileDragDepth-1);if(!fileDragDepth)board.classList.remove('file-over');
+});
+document.addEventListener('drop',event=>{
+  fileDragDepth=0;board.classList.remove('file-over');
+  if(!notice.hidden||!event.dataTransfer?.files?.length)return;
+  event.preventDefault();importDroppedFiles(event.dataTransfer.files,{x:event.clientX,y:event.clientY+scrollY});
 });
 
 function beginPinch(){

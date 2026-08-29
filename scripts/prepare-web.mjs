@@ -6,4 +6,8 @@ const output = resolve(root, 'www');
 
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-await Promise.all(['index.html', 'fondo.css', 'app.js'].map(file => cp(resolve(root, file), resolve(output, file))));
+await Promise.all([
+  ...['index.html', 'fondo.css', 'app.js'].map(file => cp(resolve(root, file), resolve(output, file))),
+  cp(resolve(root, 'node_modules/pdfjs-dist/build/pdf.min.js'), resolve(output, 'pdf.min.js')),
+  cp(resolve(root, 'node_modules/pdfjs-dist/build/pdf.worker.min.js'), resolve(output, 'pdf.worker.min.js'))
+]);

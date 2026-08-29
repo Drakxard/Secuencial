@@ -12,6 +12,7 @@
   <div class="bg-blob blob-2" aria-hidden="true"></div>
   <div class="bg-blob blob-3" aria-hidden="true"></div>
   <main id="board" aria-label="Pizarra de esferas"></main>
+  <div id="pdfStatus" class="pdf-status" role="status" aria-live="polite" hidden></div>
   <button id="progressState" class="progress-state" type="button" data-state="pausa" aria-label="Estado: pausa" title="Estado: pausa">
     <span class="progress-icon" aria-hidden="true"></span>
   </button>
@@ -29,6 +30,7 @@
       <p id="folderError" class="error" role="alert"></p>
     </section>
   </div>
+  <script src="pdf.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
