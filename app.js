@@ -90,7 +90,7 @@ function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,ran
 function arrows(){return state.arrows??(state.arrows=[])}
 function finishEditing(){if(!editingId)return;editingId=null;mobileEditor.blur();if(editDirty){editDirty=false;scheduleSave()}}
 function focusSphere(id,edit=false){if(editingId&&editingId!==id)finishEditing();selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
-function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;const image=images().find(item=>item.id===id),groupId=image?.groupId;selectedImageIds=new Set(id?images().filter(item=>groupId?item.groupId===groupId:item.id===id).map(item=>item.id):[])}
+function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
@@ -473,7 +473,9 @@ async function pastePdf(file,targetState,point){
       created.push(image);nextY+=height+16;page.cleanup();
     }
     (targetState.images??(targetState.images=[])).push(...created);
-    if(state===targetState){focusImage(created[0]?.id);render()}
+    if(state===targetState){
+      finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=created[0]?.id??null;selectedImageIds=new Set(created.map(image=>image.id));render();
+    }
     targetState.updatedAt=Date.now();recordHistory();saveBackup();clearTimeout(saveTimer);saveTimer=setTimeout(saveState,220);
     if(created.length)scrollTo({top:Math.max(0,created[0].y-24),behavior:'smooth'});
     return created;

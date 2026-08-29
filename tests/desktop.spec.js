@@ -102,7 +102,7 @@ test('Ctrl+C copia una imagen seleccionada al portapapeles',async({page})=>{
   await page.keyboard.press('Control+c');await expect.poll(()=>page.evaluate(()=>window.copiedImageTypes?.[0])).toBe('image/gif');
 });
 
-test('las páginas de una presentación se seleccionan y mueven como una tira',async({page})=>{
+test('una presentación se acomoda junta al importarla y luego sus páginas son imágenes individuales',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>{
     document.querySelector('#folderNotice').hidden=true;
@@ -110,15 +110,18 @@ test('las páginas de una presentación se seleccionan y mueven como una tira',a
     state.images=[
       {id:'page-1',groupId:'presentation',src,name:'Página 1',x:220,y:180,width:300,height:180},
       {id:'page-2',groupId:'presentation',src,name:'Página 2',x:220,y:376,width:300,height:180}
-    ];render();
+    ];selectedImageId='page-1';selectedImageIds=new Set(['page-1','page-2']);render();
   });
-  const first=page.locator('[data-image-id="page-1"]');await first.click();
+  const first=page.locator('[data-image-id="page-1"]');
   await expect(page.locator('.board-image.selected')).toHaveCount(2);
   const before=await page.evaluate(()=>state.images.map(({x,y})=>({x,y})));
   await first.dragTo(page.locator('#board'),{targetPosition:{x:650,y:340}});
   const after=await page.evaluate(()=>state.images.map(({x,y})=>({x,y})));
   expect(after[0].x-before[0].x).toBeCloseTo(after[1].x-before[1].x,4);
   expect(after[0].y-before[0].y).toBeCloseTo(after[1].y-before[1].y,4);
+  await page.locator('#board').click({position:{x:900,y:700}});await first.click();
+  await expect(page.locator('.board-image.selected')).toHaveCount(1);
+  await expect(first).toHaveClass(/resizable/);
 });
 
 test('un cuadro se ajusta al escribir sin desplazar el scroll',async({page})=>{
