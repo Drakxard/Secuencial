@@ -414,9 +414,29 @@ function exportArrow(arrow){
   return `<path d="${escapeXml(path)}" fill="none" stroke="${escapeXml(state.arrowColor??'#202020')}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#export-arrow-tip)"/>`;
 }
 function exportImage(image){return `<image x="${svgNumber(image.x)}" y="${svgNumber(image.y)}" width="${svgNumber(image.width)}" height="${svgNumber(image.height)}" href="${escapeXml(image.src)}" preserveAspectRatio="none"/>`}
+function arrowConnectsSelection(arrow,sphereIds,imageIds){
+  const selectedEnd=end=>(arrow[`${end}Id`]&&sphereIds.has(arrow[`${end}Id`]))||(arrow[`${end}ImageId`]&&imageIds.has(arrow[`${end}ImageId`]));
+  return Boolean(selectedEnd('from')&&selectedEnd('to'));
+}
+function exportBounds(spheres,exportImages,exportArrows){
+  const bounds=[];
+  exportImages.forEach(image=>bounds.push({left:image.x,top:image.y,right:image.x+image.width,bottom:image.y+image.height}));
+  // The shadow uses a 17px deviation and a 17px downward offset. Three
+  // deviations preserve the visible effect without decorative padding.
+  spheres.forEach(sphere=>bounds.push({left:sphere.x-51,top:sphere.y-34,right:sphere.x+sphereWidth(sphere)+51,bottom:sphere.y+sphereHeight(sphere)+68}));
+  exportArrows.forEach(arrow=>{
+    const borderFrom=arrowEndpoint(arrow,'from'),borderTo=arrowEndpoint(arrow,'to'),from=shortenArrowEnd(borderTo,borderFrom,6),to=shortenArrowEnd(borderFrom,borderTo,10),extent=22;
+    bounds.push({left:Math.min(from.x,to.x)-extent,top:Math.min(from.y,to.y)-extent,right:Math.max(from.x,to.x)+extent,bottom:Math.max(from.y,to.y)+extent});
+  });
+  if(!bounds.length)return{left:0,top:0,width:1,height:1};
+  const left=Math.min(...bounds.map(item=>item.left)),top=Math.min(...bounds.map(item=>item.top)),right=Math.max(...bounds.map(item=>item.right)),bottom=Math.max(...bounds.map(item=>item.bottom));
+  return{left,top,width:Math.max(1,right-left),height:Math.max(1,bottom-top)};
+}
 function buildExportSvg(){
-  const width=Math.max(1,Math.round(innerWidth)),height=Math.max(1,Math.round(canvasHeight())),arrowColor=escapeXml(state.arrowColor??'#202020');
-  const arrowMarkup=arrows().map(exportArrow).join(''),contentMarkup=[...images().map((image,index)=>({z:index+1,order:0,markup:exportImage(image)})),...state.spheres.map((sphere,index)=>({z:index+1,order:1,markup:exportShape(sphere)}))].sort((a,b)=>a.z-b.z||a.order-b.order).map(item=>item.markup).join('');
+  const hasSelection=selectedIds.size>0||selectedImageIds.size>0,spheres=hasSelection?state.spheres.filter(sphere=>selectedIds.has(sphere.id)):state.spheres,exportImages=hasSelection?images().filter(image=>selectedImageIds.has(image.id)):images();
+  const sphereIds=new Set(spheres.map(sphere=>sphere.id)),imageIds=new Set(exportImages.map(image=>image.id)),exportArrows=arrows().filter(arrow=>arrowConnectsSelection(arrow,sphereIds,imageIds)),bounds=exportBounds(spheres,exportImages,exportArrows);
+  const width=svgNumber(bounds.width),height=svgNumber(bounds.height),offsetX=svgNumber(-bounds.left),offsetY=svgNumber(-bounds.top),arrowColor=escapeXml(state.arrowColor??'#202020');
+  const arrowMarkup=exportArrows.map(exportArrow).join(''),contentMarkup=[...exportImages.map(image=>({z:images().indexOf(image)+1,order:0,markup:exportImage(image)})),...spheres.map(sphere=>({z:state.spheres.indexOf(sphere)+1,order:1,markup:exportShape(sphere)}))].sort((a,b)=>a.z-b.z||a.order-b.order).map(item=>item.markup).join('');
   const svg=`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs>
@@ -440,7 +460,7 @@ function buildExportSvg(){
     <ellipse cx="${svgNumber(width*.94)}" cy="${svgNumber(height*.91)}" rx="${svgNumber(Math.max(175,width*.14))}" ry="${svgNumber(Math.max(175,height*.065))}" fill="url(#blob-blue)"/>
     <ellipse cx="${svgNumber(width*.78)}" cy="${svgNumber(height*.48)}" rx="${svgNumber(Math.max(150,width*.12))}" ry="${svgNumber(Math.max(150,height*.055))}" fill="url(#blob-violet)"/>
   </g>
-  ${arrowMarkup}${contentMarkup}
+  <g transform="translate(${offsetX} ${offsetY})">${arrowMarkup}${contentMarkup}</g>
 </svg>`;
   return svg;
 }
@@ -680,8 +700,9 @@ document.addEventListener('keydown',event=>{
     event.preventDefault();switchPage(event.key==='ArrowRight'?1:-1);return;
   }
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){
-    const sphere=editableSelected();if(!sphere)return;
-    event.preventDefault();setRange(sphere,0,sphere.text.length);render();return;
+    const sphere=editableSelected();event.preventDefault();
+    if(sphere){setRange(sphere,0,sphere.text.length);render();return}
+    finishEditing();selectedArrowId=null;selectedIds=new Set(state.spheres.map(item=>item.id));selectedImageIds=new Set(images().map(item=>item.id));selectedId=state.spheres[0]?.id??null;selectedImageId=images()[0]?.id??null;render();return;
   }
   if((event.ctrlKey||event.metaKey)&&(growKey||shrinkKey)){
     if(resizeSelection(!shrinkKey))event.preventDefault();return;

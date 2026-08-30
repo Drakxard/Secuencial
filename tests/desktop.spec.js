@@ -124,6 +124,55 @@ test('una presentación se acomoda junta al importarla y luego sus páginas son 
   await expect(first).toHaveClass(/resizable/);
 });
 
+test('la exportacion SVG recorta a las imagenes seleccionadas',async({page})=>{
+  await page.goto('/');await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    const src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+    state.images=[
+      {id:'page-1',src,x:220,y:180,width:300,height:180},
+      {id:'page-2',src,x:220,y:376,width:300,height:180},
+      {id:'excluded',src,x:800,y:180,width:100,height:100}
+    ];selectedImageIds=new Set(['page-1','page-2']);selectedImageId='page-1';render();
+  });
+  const exported=await page.evaluate(()=>buildExportSvg());
+  expect(exported).toContain('width="300" height="376" viewBox="0 0 300 376"');
+  expect(exported).toContain('translate(-220 -180)');
+  expect((exported.match(/<image /g)||[]).length).toBe(2);
+  expect(exported).not.toContain('x="800"');
+});
+
+test('Ctrl+A selecciona objetos fuera de edicion y texto durante la edicion',async({page})=>{
+  await page.goto('/');await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    state.spheres=[{id:'a',text:'abc',x:100,y:100,scale:1},{id:'b',text:'b',x:300,y:100,scale:1}];
+    state.images=[{id:'image',src:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',x:100,y:300,width:100,height:100}];render();
+  });
+  await page.keyboard.press('Control+a');
+  await expect.poll(()=>page.evaluate(()=>({spheres:[...selectedIds].sort(),images:[...selectedImageIds]}))).toEqual({spheres:['a','b'],images:['image']});
+  await page.evaluate(()=>{focusSphere('a',true);render()});await page.keyboard.press('Control+a');
+  await expect.poll(()=>page.evaluate(()=>rangeFor(state.spheres[0]))).toEqual({anchor:0,focus:3});
+  await expect.poll(()=>page.evaluate(()=>[...selectedIds])).toEqual(['a']);
+});
+
+test('la exportacion incluye solo flechas internas a la seleccion',async({page})=>{
+  await page.goto('/');const exported=await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    state.spheres=[{id:'a',text:'A',x:100,y:100,scale:1},{id:'b',text:'B',x:350,y:100,scale:1},{id:'c',text:'C',x:600,y:100,scale:1}];
+    state.arrows=[{id:'internal',fromId:'a',toId:'b'},{id:'external',fromId:'b',toId:'c'}];selectedIds=new Set(['a','b']);render();return buildExportSvg();
+  });
+  expect((exported.match(/stroke-width="9"/g)||[]).length).toBe(1);
+  expect(exported).not.toContain('>C<');
+});
+
+test('sin seleccion exporta todo el contenido con dimensiones ajustadas',async({page})=>{
+  await page.goto('/');const exported=await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    const src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';state.images=[{id:'image',src,x:40,y:70,width:120,height:80}];render();return buildExportSvg();
+  });
+  expect(exported).toContain('width="120" height="80" viewBox="0 0 120 80"');
+  expect(exported).toContain('translate(-40 -70)');
+});
+
 test('un cuadro se ajusta al escribir sin desplazar el scroll',async({page})=>{
   await page.addInitScript(()=>{window.showDirectoryPicker=async()=>{throw Object.assign(new Error('cancelado'),{name:'AbortError'})}});
   await page.goto('/');await page.evaluate(()=>document.querySelector('#folderNotice').hidden=true);

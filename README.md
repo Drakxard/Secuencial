@@ -13,7 +13,9 @@ ofrece el mismo selector de carpetas.
 
 En PC se conservan los atajos existentes: flechas izquierda/derecha cambian de página,
 `Ctrl` + rueda o `Ctrl` + `+`/`-` cambia el tamaño, `Ctrl+Z`/`Ctrl+Y` deshace o rehace y
-`|` exporta la página como SVG.
+`|` exporta la selección como un SVG ajustado al contenido. Si no hay nada seleccionado,
+exporta todo el contenido de la página con el mismo recorte ajustado. Fuera de la edición
+de texto, `Ctrl+A` selecciona todos los nodos e imágenes de la página.
 
 ## Gestos en celular
 
