@@ -1,7 +1,7 @@
 const STATE_FILE='esferas.json', BACKUP_KEY='esferas-respaldo-v1', SCROLL_KEY='esferas-scroll-v2', PAGE_KEY='esferas-pagina-v1', CATEGORY_KEY='esferas-categoria-v1', TEXT_SCALE_KEY='esferas-tamano-texto-v1', SIZE=168, SQUARE_MIN_WIDTH=168;
 const board=document.querySelector('#board'), notice=document.querySelector('#folderNotice'), choose=document.querySelector('#chooseFolder'), errorText=document.querySelector('#folderError'), categoryBar=document.querySelector('#categoryBar'), categoryList=document.querySelector('#categoryList'), addCategory=document.querySelector('#addCategory'), mobileEditor=document.querySelector('#mobileEditor'), stopPaste=document.querySelector('#stopPaste'), progressState=document.querySelector('#progressState'), pdfStatus=document.querySelector('#pdfStatus');
 const nativeApp=Boolean(window.Capacitor?.isNativePlatform?.()),coarsePointer=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
-let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
+let directoryHandle=null, saveTimer=null, selectedId=null, editingId=null, selectedImageId=null, selectedArrowId=null, selectedIds=new Set(), selectedImageIds=new Set(), selectionCrop=null, contracted=false, drag=null, imageDrag=null, imageResizeDrag=null, arrowDrag=null, connectorDrag=null, marquee=null, backgroundHold=null, elementHold=null, arrowHold=null, colorPalette=null, lastSphereClick=null, altNumericCode='', altKeyHeld=false;
 let touchBackground=null,pinch=null,lastBackgroundTap=null,mobileSphereTapCandidate=null;
 const touchPointers=new Map();
 let mouse={x:innerWidth/2,y:innerHeight/2};
@@ -89,8 +89,8 @@ function caretFor(sphere){return rangeFor(sphere).focus}
 function setRange(sphere,anchor,focus=anchor){const limit=sphere.text.length,range={anchor:Math.max(0,Math.min(limit,anchor)),focus:Math.max(0,Math.min(limit,focus))};selectionRanges.set(sphere.id,range);caretPositions.set(sphere.id,range.focus)}
 function arrows(){return state.arrows??(state.arrows=[])}
 function finishEditing(){if(!editingId)return;editingId=null;mobileEditor.blur();if(editDirty){editDirty=false;scheduleSave()}}
-function focusSphere(id,edit=false){if(editingId&&editingId!==id)finishEditing();selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
-function focusImage(id){finishEditing();selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
+function focusSphere(id,edit=false){if(editingId&&editingId!==id)finishEditing();selectionCrop=null;selectedArrowId=null;selectedImageId=null;selectedImageIds=new Set();selectedId=id;editingId=edit?id:null;selectedIds=new Set(id?[id]:[]);const sphere=selected();if(sphere){const shape=sphereShape(sphere);setDefaultFontScale(shape,sphere.fontScale??1);if(!caretPositions.has(id))setRange(sphere,sphere.text.length)}}
+function focusImage(id){finishEditing();selectionCrop=null;selectedArrowId=null;selectedId=null;selectedIds=new Set();selectedImageId=id;selectedImageIds=new Set(id?[id]:[])}
 function removeSphere(id){state.spheres=state.spheres.filter(sphere=>sphere.id!==id);state.arrows=arrows().filter(arrow=>arrow.fromId!==id&&arrow.toId!==id);caretPositions.delete(id);selectionRanges.delete(id);selectedIds.delete(id);if(selectedId===id)selectedId=null;if(editingId===id)editingId=null}
 function sphereSize(s){return SIZE*(s.scale??1)}
 function sphereWidth(s){return s.shape==='square'?(s.width??sphereSize(s)):sphereSize(s)}
@@ -434,7 +434,7 @@ function exportBounds(spheres,exportImages,exportArrows){
 }
 function buildExportSvg(){
   const hasSelection=selectedIds.size>0||selectedImageIds.size>0,spheres=hasSelection?state.spheres.filter(sphere=>selectedIds.has(sphere.id)):state.spheres,exportImages=hasSelection?images().filter(image=>selectedImageIds.has(image.id)):images();
-  const sphereIds=new Set(spheres.map(sphere=>sphere.id)),imageIds=new Set(exportImages.map(image=>image.id)),exportArrows=arrows().filter(arrow=>arrowConnectsSelection(arrow,sphereIds,imageIds)),bounds=exportBounds(spheres,exportImages,exportArrows);
+  const sphereIds=new Set(spheres.map(sphere=>sphere.id)),imageIds=new Set(exportImages.map(image=>image.id)),exportArrows=arrows().filter(arrow=>arrowConnectsSelection(arrow,sphereIds,imageIds)),bounds=hasSelection&&selectionCrop?selectionCrop:exportBounds(spheres,exportImages,exportArrows);
   const width=svgNumber(bounds.width),height=svgNumber(bounds.height),offsetX=svgNumber(-bounds.left),offsetY=svgNumber(-bounds.top),arrowColor=escapeXml(state.arrowColor??'#202020');
   const arrowMarkup=exportArrows.map(exportArrow).join(''),contentMarkup=[...exportImages.map(image=>({z:images().indexOf(image)+1,order:0,markup:exportImage(image)})),...spheres.map(sphere=>({z:state.spheres.indexOf(sphere)+1,order:1,markup:exportShape(sphere)}))].sort((a,b)=>a.z-b.z||a.order-b.order).map(item=>item.markup).join('');
   const svg=`<?xml version="1.0" encoding="UTF-8"?>
@@ -947,6 +947,7 @@ board.addEventListener('pointermove',event=>{
 });
 function updateMarquee(x,y){
   const left=Math.min(marquee.startX,x), top=Math.min(marquee.startY,y), width=Math.abs(x-marquee.startX), height=Math.abs(y-marquee.startY);
+  selectionCrop=width&&height?{left,top,width,height}:null;
   Object.assign(marquee.element.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`});
   selectedIds=new Set(state.spheres.filter(s=>{
     const p=position(state.spheres.indexOf(s),s),itemWidth=sphereWidth(s),itemHeight=sphereHeight(s);

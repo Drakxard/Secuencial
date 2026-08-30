@@ -141,6 +141,18 @@ test('la exportacion SVG recorta a las imagenes seleccionadas',async({page})=>{
   expect(exported).not.toContain('x="800"');
 });
 
+test('la exportacion respeta exactamente el marco de seleccion',async({page})=>{
+  await page.goto('/');const exported=await page.evaluate(()=>{
+    document.querySelector('#folderNotice').hidden=true;
+    const src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+    state.images=[{id:'page',src,x:100,y:100,width:600,height:800}];
+    selectedImageIds=new Set(['page']);selectionCrop={left:150,top:180,width:420,height:510};render();
+    return buildExportSvg();
+  });
+  expect(exported).toContain('width="420" height="510" viewBox="0 0 420 510"');
+  expect(exported).toContain('translate(-150 -180)');
+});
+
 test('Ctrl+A selecciona objetos fuera de edicion y texto durante la edicion',async({page})=>{
   await page.goto('/');await page.evaluate(()=>{
     document.querySelector('#folderNotice').hidden=true;
