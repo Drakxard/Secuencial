@@ -74,12 +74,13 @@ const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}
 const svgNumber = value => Math.round(value * 100) / 100;
 
 function updateProgress(job, value) {
-  job.progress.style.setProperty('--progress', String(value / 100));
-  job.progress.setAttribute('aria-valuenow', String(value));
+  const previous = Number(job.progress.getAttribute('aria-valuenow') || 0);
+  const next = Math.max(previous, Math.min(100, value));
+  job.progress.style.setProperty('--progress', String(next / 100));
+  job.progress.setAttribute('aria-valuenow', String(next));
 }
 
 function updateStatus(job, state, label) {
-  if (state === 'processing' && job.state !== 'processing') job.progress.removeAttribute('aria-valuenow');
   if (state === 'queued') updateProgress(job, 0);
   if (state === 'ready') updateProgress(job, 100);
   job.state = state;

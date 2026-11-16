@@ -114,21 +114,18 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
   await expect(rows.nth(1).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
   const indicator = await page.evaluate(async () => {
     const element = document.querySelector('.file-row[data-state="processing"] .progress-fill');
-    const animation = element.getAnimations()[0];
-    await animation.ready;
-    const time = animation.currentTime;
-    const transform = getComputedStyle(element).transform;
     updateStatus(jobs[0], 'processing', 'Página 1 de 3');
     updateStatus(jobs[0], 'processing', 'Página 2 de 3');
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise(requestAnimationFrame);
     return {
       sameElement: element === document.querySelector('.file-row[data-state="processing"] .progress-fill'),
-      sameAnimation: element.getAnimations()[0] === animation,
-      advances: animation.currentTime > time,
-      moves: getComputedStyle(element).transform !== transform
+      width: element.getBoundingClientRect().width,
+      transform: getComputedStyle(element).transform,
+      animation: getComputedStyle(element).animationName,
+      progress: jobs[0].progress.getAttribute('aria-valuenow')
     };
   });
-  expect(indicator).toEqual({ sameElement: true, sameAnimation: true, advances: true, moves: true });
+  expect(indicator).toEqual({ sameElement: true, width: 0, transform: 'none', animation: 'none', progress: '0' });
   await page.evaluate(() => {
     window.completed = [];
     new MutationObserver(records => {
@@ -148,6 +145,14 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
 test('el borde avanza al completar páginas y solo llega al final cuando el SVG está listo', async ({ page }, testInfo) => {
   await page.goto('/');
   await page.evaluate(() => {
+    window.progressWidths = [];
+    window.sampleProgress = true;
+    function sample() {
+      const fill = document.querySelector('.progress-fill');
+      if (fill) window.progressWidths.push(fill.getBoundingClientRect().width);
+      if (window.sampleProgress) requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
     const original = pdfjsLib.getDocument;
     const secondPage = new Promise(resolve => { window.releasePage = resolve; });
     const cleanup = new Promise(resolve => { window.releaseCleanup = resolve; });
@@ -184,6 +189,12 @@ test('el borde avanza al completar páginas y solo llega al final cuando el SVG 
   await expect(progress).toHaveAttribute('aria-valuenow', '100');
   await expect.poll(fillRatio).toBe(1000);
   await expect(page.locator('.download')).toBeEnabled();
+  const widths = await page.evaluate(() => {
+    window.sampleProgress = false;
+    return window.progressWidths;
+  });
+  expect(widths.length).toBeGreaterThan(3);
+  expect(widths.every((width, index) => index === 0 || width >= widths[index - 1] - .1)).toBe(true);
 });
 
 test('PDF de una página sin espacio sobrante y vista adaptable', async ({ page }, testInfo) => {
