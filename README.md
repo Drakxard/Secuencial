@@ -2,9 +2,11 @@
 
 Conversor web local: permite seleccionar o arrastrar uno o varios PDF y descargar un SVG por archivo. La interfaz utiliza iconos y nombres de archivo, sin instrucciones visibles.
 
-El botón de archivo con «+» abre el selector múltiple. Cada fila muestra un reloj mientras espera, un indicador animado durante la conversión, una tilde cuando termina o una advertencia si falla. El botón de descarga está gris hasta que el resultado está listo y pasa a verde. El icono de advertencia permite consultar el error.
+El «+» grande centrado abre el selector múltiple; después de cargar archivos queda pequeño en la esquina superior derecha. También se pueden arrastrar PDF a la pantalla y las nuevas filas se agregan debajo. Cada fila muestra un reloj mientras espera, un indicador animado durante la conversión, una tilde cuando termina o una advertencia si falla. El botón de descarga está gris hasta que el resultado está listo y pasa a verde. El icono de advertencia permite consultar el error.
 
 Los archivos se procesan de uno en uno, en orden de carga. Se pueden agregar más durante la conversión. Un PDF inválido o protegido con contraseña no detiene los demás.
+
+`ALL ↓`, junto al «+», descarga SVG individuales a través del navegador. Hay que permitir las descargas múltiples para este sitio en el navegador. El botón toma exactamente los archivos que estén en verde al pulsarlo y lanza sus descargas en orden, con medio segundo entre archivos. Los que terminen después se incluirán al volver a pulsarlo. El botón se bloquea durante el lote para evitar superposiciones; los nombres repetidos reciben un sufijo para conservar cada archivo. Las descargas individuales de cada fila siguen disponibles. La aplicación inicia las descargas; el navegador controla los permisos y su guardado final.
 
 ## Exportación
 

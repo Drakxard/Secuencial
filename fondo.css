@@ -1,22 +1,33 @@
 ﻿:root { color-scheme: light; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: #273449; background: #f8fafc; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100dvh; }
+body:not(.has-files) { background: #fff; }
 button { font: inherit; }
-.converter { width: min(760px, 100%); margin: 0 auto; padding: max(40px, env(safe-area-inset-top)) 20px max(40px, env(safe-area-inset-bottom)); }
+.converter { width: min(760px, 100%); min-height: 100dvh; margin: 0 auto; padding: max(88px, calc(env(safe-area-inset-top) + 64px)) 20px max(40px, env(safe-area-inset-bottom)); }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex: 0 0 48px; border: 1px solid #dce3eb; border-radius: 14px; background: #fff; color: #45566d; cursor: pointer; touch-action: manipulation; }
 svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.add-files { width: 64px; height: 64px; margin-bottom: 24px; border-style: dashed; border-radius: 18px; }
-.add-files svg { width: 30px; height: 30px; }
+.add-files { position: fixed; z-index: 1; top: 50%; left: 50%; transform: translate(-50%, -50%); width: clamp(160px, 22vw, 260px); height: clamp(160px, 22vw, 260px); border: 0; background: transparent; color: #c4c4c4; }
+.add-files svg { width: 100%; height: 100%; stroke-width: 2.8; stroke-linecap: butt; }
+.icon-button.add-files:hover:enabled { background: transparent; color: #8994a3; }
+.has-files .add-files { top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); left: auto; transform: none; width: 48px; height: 48px; color: #7a8799; }
+.has-files .add-files svg { width: 24px; height: 24px; stroke-width: 2; }
+.download-all { position: fixed; z-index: 1; top: max(12px, env(safe-area-inset-top)); right: calc(max(12px, env(safe-area-inset-right)) + 56px); width: auto; padding: 0 12px; font-size: 13px; font-weight: 600; }
+body:not(.has-files) .download-all { display: none; }
+.download-all:disabled { color: #a1aab7; background: #f1f3f6; cursor: default; }
+.download-all:enabled { color: #16804b; }
+.download-all[aria-busy="true"] { animation: batch-pulse 1s ease-in-out infinite alternate; }
+@keyframes batch-pulse { to { opacity: .45; } }
 .icon-button:hover:enabled { background: #edf2f7; }
 button:focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
-body.dragging .converter { outline: 2px dashed #6c87a8; outline-offset: -8px; background: #edf3fa; }
+body.dragging::after { content: ''; position: fixed; inset: 12px; border: 2px dashed #6c87a8; border-radius: 18px; background: #6c87a80a; pointer-events: none; }
+body.dragging .add-files { color: #45566d; }
 #files { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .file-row { display: grid; grid-template-columns: minmax(0, 1fr) 48px 48px; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #e4e9ef; border-radius: 18px; }
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
 .file-status { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; color: #7a8799; }
 .file-status[data-state="ready"] { color: #16804b; }
 .file-status[data-state="error"] { color: #b45309; background: #fffbeb; border-color: #fde4b6; }
-.file-status[data-state="processing"] svg { animation: spin 1s linear infinite; }
+.file-status[data-state="processing"] svg { animation: spin 1s linear infinite; transform-origin: center; transform-box: view-box; will-change: transform; }
 .download:disabled { background: #f1f3f6; border-color: #e8ebef; color: #a1aab7; cursor: default; }
 .download:enabled { color: #fff; background: #16804b; border-color: #16804b; }
 .download:hover:enabled { background: #11663c; }

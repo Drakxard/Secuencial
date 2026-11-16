@@ -24,11 +24,17 @@ function pdfFile(name = 'documento.pdf', pageCount = 2) {
   return { name, mimeType: 'application/pdf', buffer: Buffer.from(source) };
 }
 
-test('solo iconos, selector múltiple y datos antiguos intactos', async ({ page }) => {
+test('solo iconos, selector múltiple y datos antiguos intactos', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('esferas-respaldo-v1', 'respaldo antiguo'));
   await page.goto('/');
-  await expect(page.locator('body')).toHaveText('');
+  await expect(page.locator('body')).toHaveJSProperty('innerText', '');
   await expect(page.getByRole('button', { name: 'Agregar PDF' })).toBeVisible();
+  await expect(page.locator('#downloadAll')).toBeHidden();
+  const plus = await page.locator('#addFiles').boundingBox();
+  expect(plus.width).toBeGreaterThanOrEqual(160);
+  expect(Math.abs(plus.x + plus.width / 2 - page.viewportSize().width / 2)).toBeLessThan(1);
+  expect(Math.abs(plus.y + plus.height / 2 - page.viewportSize().height / 2)).toBeLessThan(1);
+  await page.screenshot({ path: testInfo.outputPath('empty.png') });
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Agregar PDF' }).click();
   expect((await chooserPromise).isMultiple()).toBe(true);
@@ -104,6 +110,23 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
   await expect(rows.nth(1)).toHaveAttribute('data-state', 'queued');
   await expect(rows.nth(0).locator('.download')).toBeDisabled();
   await expect(rows.nth(1).locator('.download')).toHaveCSS('background-color', 'rgb(241, 243, 246)');
+  const spinner = await page.evaluate(async () => {
+    const element = document.querySelector('.file-status[data-state="processing"] svg');
+    const animation = element.getAnimations()[0];
+    await animation.ready;
+    const time = animation.currentTime;
+    const transform = getComputedStyle(element).transform;
+    updateStatus(jobs[0], 'processing', 'Página 1 de 3');
+    updateStatus(jobs[0], 'processing', 'Página 2 de 3');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    return {
+      sameElement: element === document.querySelector('.file-status[data-state="processing"] svg'),
+      sameAnimation: element.getAnimations()[0] === animation,
+      advances: animation.currentTime > time,
+      rotates: getComputedStyle(element).transform !== transform
+    };
+  });
+  expect(spinner).toEqual({ sameElement: true, sameAnimation: true, advances: true, rotates: true });
   await page.evaluate(() => {
     window.completed = [];
     new MutationObserver(records => {
@@ -124,6 +147,10 @@ test('PDF de una página sin espacio sobrante y vista adaptable', async ({ page 
   await page.goto('/');
   await page.locator('#fileInput').setInputFiles(pdfFile('Una página.pdf', 1));
   await expect(page.locator('.file-row')).toHaveAttribute('data-state', 'ready');
+  const plus = await page.locator('#addFiles').boundingBox();
+  expect(plus.width).toBe(48);
+  expect(plus.y).toBeLessThan(24);
+  expect(page.viewportSize().width - plus.x - plus.width).toBeLessThan(24);
   const promise = page.waitForEvent('download');
   await page.locator('.download').click();
   const svg = await readFile(await (await promise).path(), 'utf8');
@@ -187,4 +214,69 @@ test('carga por arrastre y limpia el indicador de arrastre', async ({ page }) =>
   await expect(page.locator('body')).not.toHaveClass('dragging');
   await expect(page.locator('.file-row')).toHaveAttribute('data-state', 'ready');
   await expect(page.locator('.file-name')).toHaveText('arrastrado.pdf');
+  await page.dispatchEvent('body', 'dragenter', { dataTransfer: transfer });
+  await expect(page.locator('body')).toHaveClass(/dragging/);
+  await page.dispatchEvent('body', 'drop', { dataTransfer: transfer });
+  await expect(page.locator('.file-row[data-state="ready"]')).toHaveCount(2);
+  await expect(page.locator('.file-name')).toHaveText(['arrastrado.pdf', 'arrastrado.pdf']);
+  await expect(page.locator('body')).not.toHaveClass(/dragging/);
+});
+
+test('ALL descarga 12 SVG individuales, completos y con nombres únicos', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#fileInput').setInputFiles(Array.from({ length: 12 }, () => pdfFile('repetido.pdf', 1)));
+  await expect(page.locator('.file-row[data-state="ready"]')).toHaveCount(12, { timeout: 15000 });
+  const all = page.locator('#downloadAll');
+  const plus = await page.locator('#addFiles').boundingBox();
+  const bulk = await all.boundingBox();
+  expect(bulk.x + bulk.width).toBeLessThan(plus.x);
+  expect(bulk.y).toBe(plus.y);
+  const downloads = [];
+  page.on('download', download => downloads.push(download));
+  await all.click();
+  await expect(all).toBeDisabled();
+  // Even a manually dispatched second click must not start an overlapping batch.
+  await all.dispatchEvent('click');
+  await expect(all).toBeEnabled({ timeout: 15000 });
+  expect(downloads).toHaveLength(12);
+  expect(new Set(downloads.map(item => item.suggestedFilename())).size).toBe(12);
+  expect(downloads[0].suggestedFilename()).toBe('repetido.svg');
+  expect(downloads[11].suggestedFilename()).toBe('repetido (12).svg');
+  for (const download of downloads) {
+    expect(await download.failure()).toBeNull();
+    const source = await readFile(await download.path(), 'utf8');
+    expect(source).toContain('<svg xmlns=');
+    expect(source.match(/<image /g)).toHaveLength(1);
+    expect(source).toContain('data:image/jpeg;base64,');
+  }
+});
+
+test('ALL toma solo los verdes al pulsar y usa la lista actual en la siguiente descarga', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const original = convertPdf;
+    const gate = new Promise(resolve => { window.finishPending = resolve; });
+    convertPdf = async job => {
+      if (job.name === 'pendiente.pdf') await gate;
+      return original(job);
+    };
+  });
+  await page.locator('#fileInput').setInputFiles([
+    pdfFile('primero.pdf', 1), pdfFile('segundo.pdf', 1), pdfFile('pendiente.pdf', 1)
+  ]);
+  await expect(page.locator('.file-row[data-state="ready"]')).toHaveCount(2);
+  await expect(page.locator('.file-row[data-state="processing"]')).toHaveCount(1);
+  const all = page.locator('#downloadAll');
+  const downloads = [];
+  page.on('download', download => downloads.push(download));
+  await all.click();
+  await page.evaluate(() => window.finishPending());
+  await page.locator('#fileInput').setInputFiles(pdfFile('nuevo.pdf', 1));
+  await expect(page.locator('.file-row[data-state="ready"]')).toHaveCount(4);
+  await expect(all).toBeEnabled();
+  expect(downloads.map(item => item.suggestedFilename())).toEqual(['primero.svg', 'segundo.svg']);
+  downloads.length = 0;
+  await all.click();
+  await expect(all).toBeEnabled({ timeout: 10000 });
+  expect(downloads.map(item => item.suggestedFilename())).toEqual(['primero.svg', 'segundo.svg', 'pendiente.svg', 'nuevo.svg']);
 });
