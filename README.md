@@ -1,106 +1,30 @@
-# Secuencial
+﻿# Secuencial · PDF → SVG
 
-Pizarra visual de esferas, cuadros, imágenes y conexiones. La misma interfaz se ejecuta
-directamente en Chrome o Edge y dentro de la aplicación Android. Funciona sin conexión y
-no envía el contenido a ningún servidor.
+Conversor web local: permite seleccionar o arrastrar uno o varios PDF y descargar un SVG por archivo. La interfaz utiliza iconos y nombres de archivo, sin instrucciones visibles.
 
-## Uso en navegador
+El botón de archivo con «+» abre el selector múltiple. Cada fila muestra un reloj mientras espera, un indicador animado durante la conversión, una tilde cuando termina o una advertencia si falla. El botón de descarga está gris hasta que el resultado está listo y pasa a verde. El icono de advertencia permite consultar el error.
 
-Abre `index.html` con Chrome o Edge. En una PC, selecciona una carpeta cuando la aplicación
-lo solicite; allí se guarda `esferas.json` y también se mantiene un respaldo local del
-navegador. En un navegador móvil el guardado es automático y local porque Android no
-ofrece el mismo selector de carpetas.
+Los archivos se procesan de uno en uno, en orden de carga. Se pueden agregar más durante la conversión. Un PDF inválido o protegido con contraseña no detiene los demás.
 
-En PC se conservan los atajos existentes: flechas izquierda/derecha cambian de página,
-`Ctrl` + rueda o `Ctrl` + `+`/`-` cambia el tamaño, `Ctrl+Z`/`Ctrl+Y` deshace o rehace y
-`|` exporta la selección como un SVG ajustado al contenido. Si no hay nada seleccionado,
-exporta todo el contenido de la página con el mismo recorte ajustado. Fuera de la edición
-de texto, `Ctrl+A` selecciona todos los nodos e imágenes de la página.
+## Exportación
 
-## Gestos en celular
+Cada PDF produce un único SVG con sus páginas apiladas verticalmente, separadas por 16 píxeles. Se conserva el método anterior: páginas renderizadas mediante PDF.js como imágenes JPEG de calidad 0,92 dentro del SVG, con el fondo de exportación original y el recorte al contenido. No es una conversión a trazos o texto vectorial. La escala visible conserva el cálculo anterior según el ancho del navegador al comenzar cada archivo; la resolución de renderizado también conserva el límite anterior.
 
-- Desliza verticalmente sobre el fondo para recorrer la pizarra. Al tirar hacia abajo
-  cuando ya estás al inicio aparece la barra de categorías.
-- Desliza horizontalmente sobre el fondo para cambiar de página.
-- Mantén pulsado el fondo y arrastra para seleccionar varios elementos.
-- Toca una esfera para seleccionarla; vuelve a tocarla después de una pausa breve para
-  abrir el teclado y editarla. Arrastrarla la mueve sin abrir el teclado.
-- Los botones que aparecen debajo de una esfera seleccionada cambian su forma o activan
-  su copia. Con la copia activa, cada doble toque en el fondo pega otra esfera. El botón
-  **Copiando ×** de la esquina superior derecha apaga ese modo.
-- Pellizca sobre la selección para cambiar su tamaño sin ampliar la página.
-- Arrastra desde el borde de una esfera para conectarla. Mantén pulsada una esfera o una
-  flecha para elegir su color.
-- Las imágenes se mueven arrastrándolas y se redimensionan desde sus tiradores.
-
-La interfaz móvil no permite borrar ni importar/exportar por ahora. Desinstalar la APK o
-borrar sus datos elimina el contenido guardado en el teléfono. La PC y el celular usan el
-mismo formato, pero no se sincronizan automáticamente.
+Los PDF se procesan en el navegador y no se envían a un servidor. Los resultados permanecen en memoria durante la sesión y se pierden al recargar. No se solicita una carpeta ni se modifica el almacenamiento de la antigua pizarra. Las descargas usan el nombre del PDF con extensión `.svg`.
 
 ## Desarrollo
 
-Requiere Node.js 22 o posterior. Instala dependencias y ejecuta las pruebas con:
+Requiere Node.js 22 o posterior.
 
 ```powershell
 npm.cmd ci
 npm.cmd run test:install
 npm.cmd test
+npm.cmd start
 ```
 
-`index.html`, `fondo.css` y `app.js` son la única fuente web. Antes de sincronizar Android,
-el script de preparación los copia a `www/`, que es generado y no se confirma en Git:
+El servidor local escucha en `http://127.0.0.1:4173`. `npm start` prepara primero los archivos web y sirve la aplicación por HTTP; no es necesario abrir `index.html` directamente.
 
-```powershell
-npm.cmd run android:sync
-```
+`index.html`, `fondo.css` y `app.js` son la fuente web. `npm run web:prepare` los copia a `www/` junto con PDF.js y su worker, sin depender de una CDN. `www/` es generado y no se confirma en Git. Vercel conserva ese comando de compilación y directorio de salida.
 
-Capacitor 8 requiere Android SDK 36 y una instalación moderna de Java/Android Studio para
-compilar localmente. GitHub Actions instala esas herramientas en la nube, por lo que no son
-necesarias para publicar desde esta PC.
-
-## Compilación y publicación del APK
-
-La APK oficial siempre se compila y publica mediante GitHub Actions. No se sube un APK
-creado manualmente y nunca se reutiliza una etiqueta publicada.
-
-Este repositorio trabaja siempre directamente sobre `main`. No se crean ramas ni pull
-requests para cambios, correcciones o publicaciones: cada modificación se prueba, se
-confirma y se sube a `main` antes de crear la etiqueta de la versión.
-
-El repositorio necesita cuatro secretos asociados siempre a la misma firma:
-
-- `SECUENCIAL_KEYSTORE_BASE64`
-- `SECUENCIAL_STORE_PASSWORD`
-- `SECUENCIAL_KEY_ALIAS`
-- `SECUENCIAL_KEY_PASSWORD`
-
-La copia privada inicial se guarda fuera del repositorio en
-`Documentos\SecuencialSigning`. Conserva un respaldo seguro de esa carpeta: Android exige
-la misma firma para instalar una versión nueva sobre la anterior.
-
-Para publicar una versión posterior:
-
-1. Incrementa `version` en `package.json` y `versionCode`/`versionName` en
-   `android/app/build.gradle`.
-2. Confirma y sube esos cambios a `main`.
-3. Crea una etiqueta nueva `vX.Y.Z` que coincida exactamente con `versionName`.
-4. Sube la etiqueta y espera a que **Android Release** termine correctamente.
-
-Ejemplo:
-
-```powershell
-git switch main
-git pull --ff-only origin main
-git tag -a v0.1.1 -m "Release 0.1.1"
-git push origin v0.1.1
-```
-
-El workflow ejecuta pruebas web, lint y compilación Android firmada, y crea un GitHub
-Release con `Secuencial.apk`. No existe actualización automática dentro de la aplicación.
-
-## Descargar e instalar
-
-Abre la [última publicación de Secuencial](https://github.com/Drakxard/Secuencial/releases/latest),
-descarga `Secuencial.apk` e instálala manualmente. Android puede pedir autorización para
-instalar aplicaciones desde el navegador o gestor de archivos utilizado. En versiones
-futuras basta descargar la nueva APK firmada y confirmar la actualización.
+Las pruebas de Playwright ejecutan los mismos escenarios en Chromium de escritorio y con el perfil móvil Pixel 7: interfaz de iconos, conversión de PDF real, páginas y colores del SVG, cola, descargas repetidas, arrastre y manejo de errores. GitHub Actions ejecuta la verificación web. El proyecto ya no incluye aplicación Android ni publicación de APK.

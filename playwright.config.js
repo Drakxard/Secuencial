@@ -10,7 +10,7 @@ module.exports = defineConfig({
     reuseExistingServer: true
   },
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'] }, grepInvert: /@mobile/ },
-    { name: 'mobile', use: { ...devices['Pixel 7'] }, grep: /@mobile/ }
+    { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
+    { name: 'mobile', use: { ...devices['Pixel 7'] } }
   ]
 });

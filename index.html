@@ -1,36 +1,22 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Esferas</title>
-  <script>document.documentElement.classList.add('restoring-view');if('scrollRestoration'in history)history.scrollRestoration='manual'</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8fafc">
+  <title>PDF → SVG</title>
   <link rel="stylesheet" href="fondo.css">
+  <script defer src="pdf.min.js"></script>
+  <script defer src="app.js"></script>
 </head>
 <body>
-  <div class="bg-blob blob-1" aria-hidden="true"></div>
-  <div class="bg-blob blob-2" aria-hidden="true"></div>
-  <div class="bg-blob blob-3" aria-hidden="true"></div>
-  <main id="board" aria-label="Pizarra de esferas"></main>
-  <div id="pdfStatus" class="pdf-status" role="status" aria-live="polite" hidden></div>
-  <button id="progressState" class="progress-state" type="button" data-state="pausa" aria-label="Estado: pausa" title="Estado: pausa">
-    <span class="progress-icon" aria-hidden="true"></span>
-  </button>
-  <textarea id="mobileEditor" class="mobile-editor" aria-label="Editar texto" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
-  <button id="stopPaste" class="stop-paste" type="button" title="Desactivar pegado" aria-label="Desactivar pegado" hidden>Copiando <span aria-hidden="true">×</span></button>
-  <nav id="categoryBar" class="category-bar" aria-label="Categorías" hidden>
-    <div id="categoryList" class="category-list"></div>
-    <button id="addCategory" class="add-category" type="button" title="Nueva categoría" aria-label="Nueva categoría">+</button>
-  </nav>
-  <div id="folderNotice" class="folder-notice" hidden>
-    <section class="folder-card">
-      <h1>Carpeta de almacenamiento</h1>
-      <p>Elige una carpeta para guardar y recuperar tus esferas localmente.</p>
-      <button id="chooseFolder" type="button">Elegir carpeta</button>
-      <p id="folderError" class="error" role="alert"></p>
-    </section>
-  </div>
-  <script src="pdf.min.js"></script>
-  <script src="app.js"></script>
+  <main class="converter" aria-label="Conversor de PDF a SVG">
+    <button id="addFiles" class="icon-button add-files" type="button" aria-label="Agregar PDF">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8M14 2v6h6M14 2l6 6v4M19 16v6m-3-3h6"/></svg>
+    </button>
+    <input id="fileInput" type="file" accept=".pdf,application/pdf" multiple hidden>
+    <ul id="files" aria-label="Archivos"></ul>
+    <span id="announcement" class="sr-only" role="status" aria-live="polite"></span>
+  </main>
 </body>
 </html>
