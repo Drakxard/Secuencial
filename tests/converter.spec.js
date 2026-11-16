@@ -110,8 +110,10 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
   await expect(rows.nth(1)).toHaveAttribute('data-state', 'queued');
   await expect(rows.nth(0).locator('.download')).toBeDisabled();
   await expect(rows.nth(1).locator('.download')).toHaveCSS('background-color', 'rgb(241, 243, 246)');
-  const spinner = await page.evaluate(async () => {
-    const element = document.querySelector('.file-status[data-state="processing"] svg');
+  await expect(rows.nth(0).locator('.file-status')).toBeHidden();
+  await expect(rows.nth(1).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+  const indicator = await page.evaluate(async () => {
+    const element = document.querySelector('.file-row[data-state="processing"] .progress-fill');
     const animation = element.getAnimations()[0];
     await animation.ready;
     const time = animation.currentTime;
@@ -120,13 +122,13 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
     updateStatus(jobs[0], 'processing', 'Página 2 de 3');
     await new Promise(resolve => setTimeout(resolve, 150));
     return {
-      sameElement: element === document.querySelector('.file-status[data-state="processing"] svg'),
+      sameElement: element === document.querySelector('.file-row[data-state="processing"] .progress-fill'),
       sameAnimation: element.getAnimations()[0] === animation,
       advances: animation.currentTime > time,
-      rotates: getComputedStyle(element).transform !== transform
+      moves: getComputedStyle(element).transform !== transform
     };
   });
-  expect(spinner).toEqual({ sameElement: true, sameAnimation: true, advances: true, rotates: true });
+  expect(indicator).toEqual({ sameElement: true, sameAnimation: true, advances: true, moves: true });
   await page.evaluate(() => {
     window.completed = [];
     new MutationObserver(records => {
@@ -141,6 +143,47 @@ test('crea filas inmediatamente, encola nuevas cargas y conserva duplicados', as
   releaseWorker();
   await expect(page.locator('.file-row[data-state="ready"]')).toHaveCount(3);
   expect(await page.evaluate(() => window.completed)).toEqual(['uno.pdf', 'dos.pdf', 'uno.pdf']);
+});
+
+test('el borde avanza al completar páginas y solo llega al final cuando el SVG está listo', async ({ page }, testInfo) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const original = pdfjsLib.getDocument;
+    const secondPage = new Promise(resolve => { window.releasePage = resolve; });
+    const cleanup = new Promise(resolve => { window.releaseCleanup = resolve; });
+    window.pdfjsLib = { ...pdfjsLib, getDocument: (...args) => {
+      const task = original(...args);
+      return {
+        promise: task.promise.then(pdf => {
+          const getPage = pdf.getPage.bind(pdf);
+          pdf.getPage = async number => {
+            if (number === 2) await secondPage;
+            return getPage(number);
+          };
+          return pdf;
+        }),
+        destroy: async () => { await cleanup; await task.destroy(); }
+      };
+    } };
+  });
+  await page.locator('#fileInput').setInputFiles(pdfFile());
+  const progress = page.getByRole('progressbar');
+  await expect(progress).toHaveAttribute('aria-valuenow', '47.5');
+  const fillRatio = () => progress.evaluate(element => Math.round(element.firstElementChild.getBoundingClientRect().width / element.getBoundingClientRect().width * 1000));
+  await expect.poll(fillRatio).toBe(475);
+  await expect(progress).toHaveCSS('height', '5px');
+  await expect(progress).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(progress.locator('.progress-fill')).toHaveCSS('border-radius', '999px');
+  await expect(page.locator('.download')).toBeDisabled();
+  await expect(page.locator('.file-status')).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath('progress.png') });
+  await page.evaluate(() => window.releasePage());
+  await expect(progress).toHaveAttribute('aria-valuenow', '95');
+  await expect(page.locator('.download')).toBeDisabled();
+  await page.evaluate(() => window.releaseCleanup());
+  await expect(progress).toHaveAttribute('aria-valuenow', '100');
+  await expect.poll(fillRatio).toBe(1000);
+  await expect(page.locator('.download')).toBeEnabled();
 });
 
 test('PDF de una página sin espacio sobrante y vista adaptable', async ({ page }, testInfo) => {

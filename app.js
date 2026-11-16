@@ -67,23 +67,28 @@ downloadAll.addEventListener('click', async () => {
 });
 
 const icons = {
-  queued: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  processing: '<path d="M21 12a9 9 0 1 1-9-9"/>',
-  ready: '<path d="m5 12 4 4L19 6"/>',
   error: '<path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/>'
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 const svgNumber = value => Math.round(value * 100) / 100;
 
+function updateProgress(job, value) {
+  job.progress.style.setProperty('--progress', String(value / 100));
+  job.progress.setAttribute('aria-valuenow', String(value));
+}
+
 function updateStatus(job, state, label) {
-  // Keep the same animated element across page progress updates.
-  if (job.status.dataset.state !== state) job.status.innerHTML = icon(state);
+  if (state === 'processing' && job.state !== 'processing') job.progress.removeAttribute('aria-valuenow');
+  if (state === 'queued') updateProgress(job, 0);
+  if (state === 'ready') updateProgress(job, 100);
   job.state = state;
   job.row.dataset.state = state;
   job.status.dataset.state = state;
   job.status.setAttribute('aria-label', `${label}: ${job.name}`);
   job.status.title = label;
+  job.progress.setAttribute('aria-valuetext', label);
+  job.progress.hidden = state === 'error';
   job.row.setAttribute('aria-busy', String(state === 'processing'));
   job.download.disabled = state !== 'ready';
   announcement.textContent = `${job.name}: ${label}`;
@@ -130,10 +135,19 @@ function addFiles(files) {
     download.className = 'icon-button download';
     download.innerHTML = icon('download');
     download.setAttribute('aria-label', `Descargar SVG de ${file.name}`);
-    row.append(name, status, download);
+    const progress = document.createElement('span');
+    progress.className = 'file-progress';
+    progress.setAttribute('role', 'progressbar');
+    progress.setAttribute('aria-label', file.name);
+    progress.setAttribute('aria-valuemin', '0');
+    progress.setAttribute('aria-valuemax', '100');
+    const fill = document.createElement('span');
+    fill.className = 'progress-fill';
+    progress.append(fill);
+    row.append(name, status, download, progress);
     filesList.append(row);
     document.body.classList.add('has-files');
-    const job = { file, name: file.name, row, status, download, state: 'queued', url: null };
+    const job = { file, name: file.name, row, status, download, progress, state: 'queued', url: null };
     jobs.push(job);
     updateStatus(job, 'queued', 'En espera');
     download.addEventListener('click', () => {
@@ -207,6 +221,8 @@ async function convertPdf(job) {
         });
         pages.push({ width, height, y, src });
         y += height + 16;
+        // Reserve the last 5% for SVG assembly and resource cleanup.
+        updateProgress(job, 95 * pageNumber / pdf.numPages);
       } finally {
         canvas.width = canvas.height = 0;
         page.cleanup();
